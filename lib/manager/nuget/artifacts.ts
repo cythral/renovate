@@ -8,10 +8,13 @@ import {
   ensureCacheDir,
   getSiblingFileName,
   outputFile,
+  readLocalDirectory,
+  readLocalDirectoryRecursive,
   readLocalFile,
   remove,
   writeLocalFile,
 } from '../../util/fs';
+import { File } from '../../util/git';
 import * as hostRules from '../../util/host-rules';
 import type {
   UpdateArtifact,
@@ -54,13 +57,73 @@ async function addSourceCmds(
   return result;
 }
 
+function getDotnetConstraint(
+  globalJsonContent: string,
+  config: UpdateArtifactsConfig
+): string | null {
+  const { constraints = {} } = config;
+  const { dotnet } = constraints;
+
+  if (dotnet) {
+    logger.debug('Using dotnet constraint from config');
+    return dotnet;
+  }
+  try {
+    const globalJson = JSON.parse(globalJsonContent);
+    if (globalJson.sdk.version) {
+      return globalJson.sdk.version;
+    }
+  } catch (err) {
+    // Do nothing
+  }
+  return '';
+}
+
+async function getSolutionFile(): Promise<string | undefined> {
+  const filesInLocalDirectory = await readLocalDirectory('/');
+  for (const file of filesInLocalDirectory) {
+    if (file.endsWith('.sln')) {
+      return file;
+    }
+  }
+
+  return undefined;
+}
+
+async function getLockFiles(): Promise<File[]> {
+  const promises = (await readLocalDirectoryRecursive('/'))
+    .filter((fileName) => fileName.endsWith('/packages.lock.json'))
+    .map(async (fileName) => ({
+      name: fileName,
+      contents: await readLocalFile(fileName),
+    }));
+
+  const result = await Promise.all(promises);
+  return result;
+}
+
+async function getChangedLockFiles(existingLockFiles: File[]): Promise<File[]> {
+  const result = [];
+  for (const lockFile of existingLockFiles) {
+    const newContents = await readLocalFile(lockFile.name);
+    if (lockFile.contents !== newContents) {
+      lockFile.contents = newContents;
+      result.push(lockFile);
+    }
+  }
+  return result;
+}
+
 async function runDotnetRestore(
   packageFileName: string,
   config: UpdateArtifactsConfig
 ): Promise<void> {
+  const globalJsonContent = await readLocalFile('global.json', 'utf8');
+  const tagConstraint = getDotnetConstraint(globalJsonContent, config);
   const execOptions: ExecOptions = {
     docker: {
       image: 'dotnet',
+      tagConstraint,
     },
   };
 
@@ -72,9 +135,12 @@ async function runDotnetRestore(
     nugetConfigFile,
     `<?xml version="1.0" encoding="utf-8"?>\n<configuration>\n</configuration>\n`
   );
+  const solutionFile = await getSolutionFile();
   const cmds = [
     ...(await addSourceCmds(packageFileName, config, nugetConfigFile)),
-    `dotnet restore ${packageFileName} --force-evaluate --configfile ${nugetConfigFile}`,
+    `dotnet restore ${
+      solutionFile ?? packageFileName
+    } --force-evaluate --configfile ${nugetConfigFile}`,
   ];
   logger.debug({ cmd: cmds }, 'dotnet command');
   await exec(cmds, execOptions);
@@ -114,6 +180,8 @@ export async function updateArtifacts({
     return null;
   }
 
+  const existingLockFiles = await getLockFiles();
+
   try {
     if (updatedDeps.length === 0 && config.isLockFileMaintenance !== true) {
       logger.debug(
@@ -126,20 +194,13 @@ export async function updateArtifacts({
 
     await runDotnetRestore(packageFileName, config);
 
-    const newLockFileContent = await readLocalFile(lockFileName, 'utf8');
-    if (existingLockFileContent === newLockFileContent) {
+    const changedLockFiles = await getChangedLockFiles(existingLockFiles);
+    if (changedLockFiles.length === 0) {
       logger.debug(`Lock file is unchanged`);
       return null;
     }
     logger.debug('Returning updated lock file');
-    return [
-      {
-        file: {
-          name: lockFileName,
-          contents: await readLocalFile(lockFileName),
-        },
-      },
-    ];
+    return changedLockFiles.map((file) => ({ file }));
   } catch (err) {
     // istanbul ignore if
     if (err.message === TEMPORARY_ERROR) {

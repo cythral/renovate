@@ -167,6 +167,28 @@ export async function readLocalDirectory(path: string): Promise<string[]> {
   return fileList;
 }
 
+export async function readLocalDirectoryRecursive(
+  path: string
+): Promise<string[]> {
+  const { localDir } = getAdminConfig();
+  const localPath = join(localDir, path);
+  const result = [];
+  const inodes = await fs.readdir(localPath);
+
+  for (const inode of inodes) {
+    const absolutePath = join(localDir, path, inode);
+    const relativePath = join(path, inode).replace(/^\//, '');
+
+    if (inode !== '.git' && fs.lstatSync(absolutePath).isDirectory()) {
+      const recursivePaths = await readLocalDirectoryRecursive(relativePath);
+      result.push(...recursivePaths);
+    } else {
+      result.push(relativePath);
+    }
+  }
+  return result;
+}
+
 export function createWriteStream(path: string): fs.WriteStream {
   return fs.createWriteStream(path);
 }

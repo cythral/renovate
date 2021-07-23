@@ -365,6 +365,11 @@ export async function syncGit(): Promise<void> {
   }
 }
 
+export async function getCurrentBranch(): Promise<string> {
+  config.currentBranch ??= await getDefaultBranch(git);
+  return config.currentBranch;
+}
+
 // istanbul ignore next
 export async function getRepoStatus(): Promise<StatusResult> {
   await syncGit();
@@ -620,12 +625,13 @@ export async function getBranchLastCommitTime(
   }
 }
 
-export async function getBranchFiles(branchName: string): Promise<string[]> {
-  await syncBranch(branchName);
+export async function getBranchFiles(branchName?: string): Promise<string[]> {
+  const branch = branchName ?? (await getCurrentBranch());
+  await syncBranch(branch);
   try {
     const diff = await git.diffSummary([
-      `origin/${branchName}`,
-      `origin/${branchName}^`,
+      `origin/${branch}`,
+      `origin/${branch}^`,
     ]);
     return diff.files.map((file) => file.file);
   } catch (err) /* istanbul ignore next */ {

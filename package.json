@@ -1,7 +1,7 @@
 {
-  "name": "renovate",
+  "name": "@cythral/renovate",
   "description": "Automated dependency updates. Flexible so you don't need to be.",
-  "version": "0.0.0-semantic-release",
+  "version": "0.1.0",
   "bin": {
     "renovate": "dist/renovate.js",
     "renovate-config-validator": "dist/config-validator.js"
@@ -48,7 +48,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/renovatebot/renovate.git"
+    "url": "https://github.com/cythral/renovate.git"
   },
   "keywords": [
     "automated",
