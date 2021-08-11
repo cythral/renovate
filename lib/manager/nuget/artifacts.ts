@@ -155,29 +155,19 @@ export async function updateArtifacts({
 }: UpdateArtifact): Promise<UpdateArtifactsResult[] | null> {
   logger.debug(`nuget.updateArtifacts(${packageFileName})`);
 
-  if (!/(?:cs|vb|fs)proj$/i.test(packageFileName)) {
-    // This could be implemented in the future if necessary.
-    // It's not that easy though because the questions which
-    // project file to restore how to determine which lock files
-    // have been changed in such cases.
-    logger.debug(
-      { packageFileName },
-      'Not updating lock file for non project files'
+  if (/(?:cs|vb|fs)proj$/i.test(packageFileName)) {
+    const lockFileName = getSiblingFileName(
+      packageFileName,
+      'packages.lock.json'
     );
-    return null;
-  }
-
-  const lockFileName = getSiblingFileName(
-    packageFileName,
-    'packages.lock.json'
-  );
-  const existingLockFileContent = await readLocalFile(lockFileName, 'utf8');
-  if (!existingLockFileContent) {
-    logger.debug(
-      { packageFileName },
-      'No lock file found beneath package file.'
-    );
-    return null;
+    const existingLockFileContent = await readLocalFile(lockFileName, 'utf8');
+    if (!existingLockFileContent) {
+      logger.debug(
+        { packageFileName },
+        'No lock file found beneath package file.'
+      );
+      return null;
+    }
   }
 
   const existingLockFiles = await getLockFiles();
@@ -210,7 +200,6 @@ export async function updateArtifacts({
     return [
       {
         artifactError: {
-          lockFile: lockFileName,
           stderr: err.message,
         },
       },

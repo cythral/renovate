@@ -1,7 +1,7 @@
 {
   "name": "@cythral/renovate",
-  "description": "Automated dependency updates. Flexible so you don't need to be.",
-  "version": "0.1.0",
+  "description": "Fork of renovate with improved .NET support.",
+  "version": "0.1.2",
   "bin": {
     "renovate": "dist/renovate.js",
     "renovate-config-validator": "dist/config-validator.js"
