@@ -1,6 +1,6 @@
 import semver, { validRange } from 'semver';
 import { quote } from 'shlex';
-import { getAdminConfig } from '../../../config/admin';
+import { getGlobalConfig } from '../../../config/global';
 import { TEMPORARY_ERROR } from '../../../constants/error-messages';
 import { logger } from '../../../logger';
 import { ExecOptions, exec } from '../../../util/exec';
@@ -67,13 +67,12 @@ export async function generateLockFiles(
       return { error: false };
     }
     let lernaCommand = `lerna bootstrap --no-ci --ignore-scripts -- `;
-    if (getAdminConfig().allowScripts && config.ignoreScripts !== false) {
+    if (getGlobalConfig().allowScripts && config.ignoreScripts !== false) {
       cmdOptions = cmdOptions.replace('--ignore-scripts ', '');
       lernaCommand = lernaCommand.replace('--ignore-scripts ', '');
     }
     lernaCommand += cmdOptions;
-    const allowUnstable = true; // lerna will pick the default installed npm@6 unless we use node@>=15
-    const tagConstraint = await getNodeConstraint(config, allowUnstable);
+    const tagConstraint = await getNodeConstraint(config);
     const execOptions: ExecOptions = {
       cwd,
       extraEnv: {
@@ -82,13 +81,13 @@ export async function generateLockFiles(
       },
       docker: {
         image: 'node',
-        tagScheme: 'npm',
+        tagScheme: 'node',
         tagConstraint,
         preCommands,
       },
     };
     // istanbul ignore if
-    if (getAdminConfig().exposeAllEnv) {
+    if (getGlobalConfig().exposeAllEnv) {
       execOptions.extraEnv.NPM_AUTH = env.NPM_AUTH;
       execOptions.extraEnv.NPM_EMAIL = env.NPM_EMAIL;
     }

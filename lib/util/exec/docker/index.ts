@@ -1,9 +1,10 @@
 import is from '@sindresorhus/is';
-import { getAdminConfig } from '../../../config/admin';
+import { getGlobalConfig } from '../../../config/global';
 import { SYSTEM_INSUFFICIENT_MEMORY } from '../../../constants/error-messages';
 import { getPkgReleases } from '../../../datasource';
 import { logger } from '../../../logger';
 import * as versioning from '../../../versioning';
+import { regEx } from '../../regex';
 import { ensureTrailingSlash } from '../../url';
 import {
   DockerOptions,
@@ -93,6 +94,11 @@ export async function getDockerTag(
     versions = versions.filter(
       (version) => ver.isVersion(version) && ver.matches(version, constraint)
     );
+    // Prefer stable versions over unstable, even if the range satisfies both types
+    if (!versions.every((version) => ver.isStable(version))) {
+      logger.debug('Filtering out unstable versions');
+      versions = versions.filter((version) => ver.isStable(version));
+    }
     versions = versions.sort(ver.sortVersions.bind(ver));
     if (versions.length) {
       const version = versions.pop();
@@ -114,7 +120,7 @@ export async function getDockerTag(
 }
 
 function getContainerName(image: string, prefix?: string): string {
-  return `${prefix || 'renovate_'}${image}`.replace(/\//g, '_');
+  return `${prefix || 'renovate_'}${image}`.replace(regEx(/\//g), '_');
 }
 
 function getContainerLabel(prefix: string): string {
@@ -150,7 +156,7 @@ export async function removeDockerContainer(
 }
 
 export async function removeDanglingContainers(): Promise<void> {
-  const { binarySource, dockerChildPrefix } = getAdminConfig();
+  const { binarySource, dockerChildPrefix } = getGlobalConfig();
   if (binarySource !== 'docker') {
     return;
   }
@@ -203,7 +209,7 @@ export async function generateDockerCommand(
     dockerUser,
     dockerChildPrefix,
     dockerImagePrefix,
-  } = getAdminConfig();
+  } = getGlobalConfig();
   const result = ['docker run --rm'];
   const containerName = getContainerName(image, dockerChildPrefix);
   const containerLabel = getContainerLabel(dockerChildPrefix);
@@ -252,7 +258,7 @@ export async function generateDockerCommand(
     ...commands,
     ...prepareCommands(postCommands),
   ].join(' && ');
-  result.push(`bash -l -c "${bashCommand.replace(/"/g, '\\"')}"`); // lgtm [js/incomplete-sanitization]
+  result.push(`bash -l -c "${bashCommand.replace(regEx(/"/g), '\\"')}"`); // lgtm [js/incomplete-sanitization]
 
   return result.join(' ');
 }

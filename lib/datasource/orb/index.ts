@@ -4,6 +4,19 @@ import { Datasource } from '../datasource';
 import type { GetReleasesConfig, ReleaseResult } from '../types';
 import type { OrbRelease } from './types';
 
+const query = `
+query($lookupName: String!) {
+  orb(name: $lookupName) {
+    name,
+    homeUrl,
+    versions {
+      version,
+      createdAt
+    }
+  }
+}
+`;
+
 export class OrbDatasource extends Datasource {
   static readonly id = 'orb';
 
@@ -11,9 +24,9 @@ export class OrbDatasource extends Datasource {
     super(OrbDatasource.id);
   }
 
-  customRegistrySupport = false;
+  override readonly customRegistrySupport = false;
 
-  defaultRegistryUrls = ['https://circleci.com/'];
+  override readonly defaultRegistryUrls = ['https://circleci.com/'];
 
   @cache({
     namespace: `datasource-${OrbDatasource.id}`,
@@ -25,8 +38,8 @@ export class OrbDatasource extends Datasource {
   }: GetReleasesConfig): Promise<ReleaseResult | null> {
     const url = `${registryUrl}graphql-unstable`;
     const body = {
-      query: `{orb(name:"${lookupName}"){name, homeUrl, versions {version, createdAt}}}`,
-      variables: {},
+      query,
+      variables: { lookupName },
     };
     const res: OrbRelease = (
       await this.http.postJson<{ data: { orb: OrbRelease } }>(url, {

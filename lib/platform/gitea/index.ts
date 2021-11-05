@@ -1,6 +1,8 @@
 import URL from 'url';
 import is from '@sindresorhus/is';
+import JSON5 from 'json5';
 import { lt } from 'semver';
+import { PlatformId } from '../../constants';
 import {
   REPOSITORY_ACCESS_FORBIDDEN,
   REPOSITORY_ARCHIVED,
@@ -9,7 +11,6 @@ import {
   REPOSITORY_EMPTY,
   REPOSITORY_MIRRORED,
 } from '../../constants/error-messages';
-import { PLATFORM_TYPE_GITEA } from '../../constants/platforms';
 import { logger } from '../../logger';
 import { BranchStatus, PrState, VulnerabilityAlert } from '../../types';
 import * as git from '../../util/git';
@@ -25,6 +26,7 @@ import type {
   EnsureIssueConfig,
   FindPRConfig,
   Issue,
+  MergePRConfig,
   Platform,
   PlatformParams,
   PlatformResult,
@@ -49,7 +51,7 @@ interface GiteaRepoConfig {
 }
 
 const defaults = {
-  hostType: PLATFORM_TYPE_GITEA,
+  hostType: PlatformId.Gitea,
   endpoint: 'https://gitea.com/api/v1/',
   version: '0.0.0',
 };
@@ -220,6 +222,9 @@ const platform: Platform = {
     repo: string = config.repository
   ): Promise<any | null> {
     const raw = await platform.getRawFile(fileName, repo);
+    if (fileName.endsWith('.json5')) {
+      return JSON5.parse(raw);
+    }
     return JSON.parse(raw);
   },
 
@@ -286,7 +291,7 @@ const platform: Platform = {
 
     // Find options for current host and determine Git endpoint
     const opts = hostRules.find({
-      hostType: PLATFORM_TYPE_GITEA,
+      hostType: PlatformId.Gitea,
       url: defaults.endpoint,
     });
     const gitEndpoint = URL.parse(repo.clone_url);
@@ -296,8 +301,6 @@ const platform: Platform = {
     await git.initRepo({
       ...config,
       url: URL.format(gitEndpoint),
-      gitAuthorName: global.gitAuthor?.name,
-      gitAuthorEmail: global.gitAuthor?.email,
     });
 
     // Reset cached resources
@@ -351,19 +354,7 @@ const platform: Platform = {
     }
   },
 
-  async getBranchStatus(
-    branchName: string,
-    requiredStatusChecks?: string[] | null
-  ): Promise<BranchStatus> {
-    if (!requiredStatusChecks) {
-      return BranchStatus.green;
-    }
-
-    if (Array.isArray(requiredStatusChecks) && requiredStatusChecks.length) {
-      logger.warn({ requiredStatusChecks }, 'Unsupported requiredStatusChecks');
-      return BranchStatus.red;
-    }
-
+  async getBranchStatus(branchName: string): Promise<BranchStatus> {
     let ccs: helper.CombinedCommitStatus;
     try {
       ccs = await helper.getCombinedCommitStatus(config.repository, branchName);
@@ -563,12 +554,12 @@ const platform: Platform = {
     });
   },
 
-  async mergePr(number: number, branchName: string): Promise<boolean> {
+  async mergePr({ id }: MergePRConfig): Promise<boolean> {
     try {
-      await helper.mergePR(config.repository, number, config.mergeMethod);
+      await helper.mergePR(config.repository, id, config.mergeMethod);
       return true;
     } catch (err) {
-      logger.warn({ err, number }, 'Merging of PR failed');
+      logger.warn({ err, id }, 'Merging of PR failed');
       return false;
     }
   },

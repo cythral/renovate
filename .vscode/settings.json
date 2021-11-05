@@ -41,5 +41,7 @@
     "!Select sequence",
     "!Split",
     "!Split sequence"
-  ]
+  ],
+  "jest.autoRun": "off",
+  "jest.jestCommandLine": "yarn jest"
 }

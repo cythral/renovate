@@ -1,14 +1,16 @@
 import { ECR, ECRClientConfig } from '@aws-sdk/client-ecr';
+import is from '@sindresorhus/is';
+import { parse } from 'auth-header';
 import hasha from 'hasha';
-import wwwAuthenticate from 'www-authenticate';
 import { HOST_DISABLED } from '../../constants/error-messages';
 import { logger } from '../../logger';
 import { HostRule } from '../../types';
 import { ExternalHostError } from '../../types/errors/external-host-error';
 import * as packageCache from '../../util/cache/package';
 import * as hostRules from '../../util/host-rules';
-import { Http, HttpResponse } from '../../util/http';
+import { Http, HttpOptions, HttpResponse } from '../../util/http';
 import type { OutgoingHttpHeaders } from '../../util/http/types';
+import { regEx } from '../../util/regex';
 import {
   ensureTrailingSlash,
   parseUrl,
@@ -19,7 +21,7 @@ import { MediaType, RegistryRepository } from './types';
 export const id = 'docker';
 export const http = new Http(id);
 
-export const ecrRegex = /\d+\.dkr\.ecr\.([-a-z0-9]+)\.amazonaws\.com/;
+export const ecrRegex = regEx(/\d+\.dkr\.ecr\.([-a-z0-9]+)\.amazonaws\.com/);
 const DOCKER_HUB = 'https://index.docker.io';
 export const defaultRegistryUrls = [DOCKER_HUB];
 
@@ -32,8 +34,10 @@ async function getECRAuthToken(
     config.credentials = {
       accessKeyId: opts.username,
       secretAccessKey: opts.password,
+      ...(opts.token && { sessionToken: opts.token }),
     };
   }
+
   const ecr = new ECR(config);
   try {
     const data = await ecr.getAuthorizationToken({});
@@ -59,24 +63,47 @@ export async function getAuthHeaders(
     const apiCheckUrl = `${registryHost}/v2/`;
     const apiCheckResponse = await http.get(apiCheckUrl, {
       throwHttpErrors: false,
+      noAuth: true,
     });
-    if (apiCheckResponse.headers['www-authenticate'] === undefined) {
+
+    if (apiCheckResponse.statusCode === 200) {
+      logger.debug({ registryHost }, 'No registry auth required');
       return {};
     }
-    const authenticateHeader = new wwwAuthenticate.parsers.WWW_Authenticate(
+    if (
+      apiCheckResponse.statusCode !== 401 ||
+      !is.nonEmptyString(apiCheckResponse.headers['www-authenticate'])
+    ) {
+      logger.warn(
+        { registryHost, res: apiCheckResponse },
+        'Invalid registry response'
+      );
+      return null;
+    }
+
+    const authenticateHeader = parse(
       apiCheckResponse.headers['www-authenticate']
     );
 
-    const opts: HostRule & {
-      headers?: Record<string, string>;
-    } = hostRules.find({ hostType: id, url: apiCheckUrl });
+    const opts: HostRule & HttpOptions = hostRules.find({
+      hostType: id,
+      url: apiCheckUrl,
+    });
     if (ecrRegex.test(registryHost)) {
+      logger.trace(
+        { registryHost, dockerRepository },
+        `Using ecr auth for Docker registry`
+      );
       const [, region] = ecrRegex.exec(registryHost);
       const auth = await getECRAuthToken(region, opts);
       if (auth) {
         opts.headers = { authorization: `Basic ${auth}` };
       }
     } else if (opts.username && opts.password) {
+      logger.trace(
+        { registryHost, dockerRepository },
+        `Using basic auth for Docker registry`
+      );
       const auth = Buffer.from(`${opts.username}:${opts.password}`).toString(
         'base64'
       );
@@ -84,26 +111,40 @@ export async function getAuthHeaders(
     } else if (opts.token) {
       const authType = opts.authType ?? 'Bearer';
       logger.trace(
-        `Using ${authType} token for Docker registry ${registryHost}`
+        { registryHost, dockerRepository },
+        `Using ${authType} token for Docker registry`
       );
       opts.headers = { authorization: `${authType} ${opts.token}` };
-      return opts.headers;
     }
     delete opts.username;
     delete opts.password;
     delete opts.token;
 
-    if (authenticateHeader.scheme.toUpperCase() === 'BASIC') {
-      logger.trace(`Using Basic auth for docker registry ${registryHost}`);
-      await http.get(apiCheckUrl, opts);
+    // If realm isn't an url, we should directly use auth header
+    // Can happen when we get a Basic auth or some other auth type
+    // * WWW-Authenticate: Basic realm="Artifactory Realm"
+    // * Www-Authenticate: Basic realm="https://123456789.dkr.ecr.eu-central-1.amazonaws.com/",service="ecr.amazonaws.com"
+    // * www-authenticate: Bearer realm="https://ghcr.io/token",service="ghcr.io",scope="repository:user/image:pull"
+    // * www-authenticate: Bearer realm="https://auth.docker.io/token",service="registry.docker.io"
+    if (
+      authenticateHeader.scheme.toUpperCase() !== 'BEARER' ||
+      !is.string(authenticateHeader.params.realm) ||
+      !is.string(authenticateHeader.params.service) ||
+      parseUrl(authenticateHeader.params.realm) === null
+    ) {
+      logger.trace(
+        { registryHost, dockerRepository, authenticateHeader },
+        `Invalid realm, testing direct auth`
+      );
       return opts.headers;
     }
 
-    // prettier-ignore
-    const authUrl = `${String(authenticateHeader.parms.realm)}?service=${String(authenticateHeader.parms.service)}&scope=repository:${dockerRepository}:pull`;
+    const authUrl = `${authenticateHeader.params.realm}?service=${authenticateHeader.params.service}&scope=repository:${dockerRepository}:pull`;
     logger.trace(
-      `Obtaining docker registry token for ${dockerRepository} using url ${authUrl}`
+      { registryHost, dockerRepository, authUrl },
+      `Obtaining docker registry token`
     );
+    opts.noAuth = true;
     const authResponse = (
       await http.getJson<{ token?: string; access_token?: string }>(
         authUrl,
@@ -170,11 +211,11 @@ export function getRegistryRepository(
 ): RegistryRepository {
   if (registryUrl !== DOCKER_HUB) {
     const registryEndingWithSlash = ensureTrailingSlash(
-      registryUrl.replace(/^https?:\/\//, '')
+      registryUrl.replace(regEx(/^https?:\/\//), '')
     );
     if (lookupName.startsWith(registryEndingWithSlash)) {
       let registryHost = trimTrailingSlash(registryUrl);
-      if (!/^https?:\/\//.test(registryHost)) {
+      if (!regEx(/^https?:\/\//).test(registryHost)) {
         registryHost = `https://${registryHost}`;
       }
       let dockerRepository = lookupName.replace(registryEndingWithSlash, '');
@@ -196,12 +237,15 @@ export function getRegistryRepository(
   }
   let dockerRepository = split.join('/');
   if (!registryHost) {
-    registryHost = registryUrl;
+    registryHost = registryUrl.replace(
+      'https://docker.io',
+      'https://index.docker.io'
+    );
   }
   if (registryHost === 'docker.io') {
     registryHost = 'index.docker.io';
   }
-  if (!/^https?:\/\//.exec(registryHost)) {
+  if (!regEx(/^https?:\/\//).exec(registryHost)) {
     registryHost = `https://${registryHost}`;
   }
   const opts = hostRules.find({ hostType: id, url: registryHost });
@@ -221,20 +265,18 @@ function digestFromManifestStr(str: hasha.HashaInput): string {
   return 'sha256:' + hasha(str, { algorithm: 'sha256' });
 }
 
-export function extractDigestFromResponse(
+export function extractDigestFromResponseBody(
   manifestResponse: HttpResponse
 ): string {
-  if (manifestResponse.headers['docker-content-digest'] === undefined) {
-    return digestFromManifestStr(manifestResponse.body);
-  }
-  return manifestResponse.headers['docker-content-digest'] as string;
+  return digestFromManifestStr(manifestResponse.body);
 }
 
 // TODO: debug why quay throws errors (#9612)
 export async function getManifestResponse(
   registryHost: string,
   dockerRepository: string,
-  tag: string
+  tag: string,
+  mode: 'head' | 'get' = 'get'
 ): Promise<HttpResponse> {
   logger.debug(
     `getManifestResponse(${registryHost}, ${dockerRepository}, ${tag})`
@@ -248,8 +290,9 @@ export async function getManifestResponse(
     headers.accept =
       'application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json';
     const url = `${registryHost}/v2/${dockerRepository}/manifests/${tag}`;
-    const manifestResponse = await http.get(url, {
+    const manifestResponse = await http[mode](url, {
       headers,
+      noAuth: true,
     });
     return manifestResponse;
   } catch (err) /* istanbul ignore next */ {
@@ -396,6 +439,7 @@ export async function getLabels(
     const url = `${registryHost}/v2/${dockerRepository}/blobs/${configDigest}`;
     const configResponse = await http.get(url, {
       headers,
+      noAuth: true,
     });
     labels = JSON.parse(configResponse.body).config.Labels;
 

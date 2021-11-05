@@ -1,19 +1,14 @@
 import is from '@sindresorhus/is';
 import { quote } from 'shlex';
-import { getAdminConfig } from '../../config/admin';
+import { PlatformId } from '../../constants';
 import {
   SYSTEM_INSUFFICIENT_DISK_SPACE,
   TEMPORARY_ERROR,
 } from '../../constants/error-messages';
-import {
-  PLATFORM_TYPE_GITHUB,
-  PLATFORM_TYPE_GITLAB,
-} from '../../constants/platforms';
 import * as datasourcePackagist from '../../datasource/packagist';
 import { logger } from '../../logger';
 import { ExecOptions, exec } from '../../util/exec';
 import {
-  deleteLocalFile,
   ensureCacheDir,
   ensureLocalDir,
   getSiblingFileName,
@@ -23,15 +18,22 @@ import {
 } from '../../util/fs';
 import { getRepoStatus } from '../../util/git';
 import * as hostRules from '../../util/host-rules';
+import { regEx } from '../../util/regex';
 import type { UpdateArtifact, UpdateArtifactsResult } from '../types';
 import type { AuthJson } from './types';
-import { composerVersioningId, getConstraint } from './utils';
+import {
+  composerVersioningId,
+  extractContraints,
+  getComposerArguments,
+  getComposerConstraint,
+  getPhpConstraint,
+} from './utils';
 
 function getAuthJson(): string | null {
   const authJson: AuthJson = {};
 
   const githubCredentials = hostRules.find({
-    hostType: PLATFORM_TYPE_GITHUB,
+    hostType: PlatformId.Github,
     url: 'https://api.github.com/',
   });
   if (githubCredentials?.token) {
@@ -41,7 +43,7 @@ function getAuthJson(): string | null {
   }
 
   hostRules
-    .findAll({ hostType: PLATFORM_TYPE_GITLAB })
+    .findAll({ hostType: PlatformId.Gitlab })
     ?.forEach((gitlabHostRule) => {
       if (gitlabHostRule?.token) {
         const host = gitlabHostRule.resolvedHost || 'gitlab.com';
@@ -58,10 +60,13 @@ function getAuthJson(): string | null {
   hostRules
     .findAll({ hostType: datasourcePackagist.id })
     ?.forEach((hostRule) => {
-      const { resolvedHost, username, password } = hostRule;
+      const { resolvedHost, username, password, token } = hostRule;
       if (resolvedHost && username && password) {
         authJson['http-basic'] = authJson['http-basic'] || {};
         authJson['http-basic'][resolvedHost] = { username, password };
+      } else if (resolvedHost && token) {
+        authJson.bearer = authJson.bearer || {};
+        authJson.bearer[resolvedHost] = token;
       }
     });
 
@@ -76,13 +81,8 @@ export async function updateArtifacts({
 }: UpdateArtifact): Promise<UpdateArtifactsResult[] | null> {
   logger.debug(`composer.updateArtifacts(${packageFileName})`);
 
-  const cacheDir = await ensureCacheDir(
-    './others/composer',
-    'COMPOSER_CACHE_DIR'
-  );
-
-  const lockFileName = packageFileName.replace(/\.json$/, '.lock');
-  const existingLockFileContent = await readLocalFile(lockFileName);
+  const lockFileName = packageFileName.replace(regEx(/\.json$/), '.lock');
+  const existingLockFileContent = await readLocalFile(lockFileName, 'utf8');
   if (!existingLockFileContent) {
     logger.debug('No composer.lock found');
     return null;
@@ -93,39 +93,43 @@ export async function updateArtifacts({
   await ensureLocalDir(vendorDir);
   try {
     await writeLocalFile(packageFileName, newPackageFileContent);
-    if (config.isLockFileMaintenance) {
-      await deleteLocalFile(lockFileName);
-    }
+
+    const constraints = {
+      ...extractContraints(
+        JSON.parse(newPackageFileContent),
+        JSON.parse(existingLockFileContent)
+      ),
+      ...config.constraints,
+    };
+
+    const preCommands: string[] = [
+      `install-tool composer ${await getComposerConstraint(constraints)}`,
+    ];
 
     const execOptions: ExecOptions = {
       cwdFile: packageFileName,
       extraEnv: {
-        COMPOSER_CACHE_DIR: cacheDir,
+        COMPOSER_CACHE_DIR: await ensureCacheDir('composer'),
         COMPOSER_AUTH: getAuthJson(),
       },
       docker: {
-        image: 'composer',
-        tagConstraint: getConstraint(config),
+        preCommands,
+        image: 'php',
+        tagConstraint: getPhpConstraint(constraints),
         tagScheme: composerVersioningId,
       },
     };
     const cmd = 'composer';
     let args: string;
     if (config.isLockFileMaintenance) {
-      args = 'install';
+      args = 'update';
     } else {
       args =
         (
           'update ' + updatedDeps.map((dep) => quote(dep.depName)).join(' ')
         ).trim() + ' --with-dependencies';
     }
-    if (config.composerIgnorePlatformReqs) {
-      args += ' --ignore-platform-reqs';
-    }
-    args += ' --no-ansi --no-interaction';
-    if (!getAdminConfig().allowScripts || config.ignoreScripts) {
-      args += ' --no-scripts --no-autoloader';
-    }
+    args += getComposerArguments(config);
     logger.debug({ cmd, args }, 'composer command');
     await exec(`${cmd} ${args}`, execOptions);
     const status = await getRepoStatus();
@@ -146,7 +150,7 @@ export async function updateArtifacts({
       return res;
     }
 
-    logger.debug(`Commiting vendor files in ${vendorDir}`);
+    logger.debug(`Committing vendor files in ${vendorDir}`);
     for (const f of [...status.modified, ...status.not_added]) {
       if (f.startsWith(vendorDir)) {
         res.push({

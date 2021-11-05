@@ -2,21 +2,22 @@ import { logger } from '../../logger';
 import { ExternalHostError } from '../../types/errors/external-host-error';
 import { cache } from '../../util/cache/package/decorator';
 import type { HttpError } from '../../util/http/types';
+import { regEx } from '../../util/regex';
 import * as hashicorpVersioning from '../../versioning/hashicorp';
 import type { GetReleasesConfig, ReleaseResult } from '../types';
 import { TerraformDatasource } from './base';
 import type { RegistryRepository, TerraformRelease } from './types';
 
 export class TerraformModuleDatasource extends TerraformDatasource {
-  static readonly id = 'terraform-module';
+  static override readonly id = 'terraform-module';
 
   constructor() {
     super(TerraformModuleDatasource.id);
   }
 
-  readonly defaultRegistryUrls = ['https://registry.terraform.io'];
+  override readonly defaultRegistryUrls = ['https://registry.terraform.io'];
 
-  readonly defaultVersioning = hashicorpVersioning.id;
+  override readonly defaultVersioning = hashicorpVersioning.id;
 
   /**
    * This function will fetch a package from the specified Terraform registry and return all semver versions.
@@ -103,7 +104,7 @@ export class TerraformModuleDatasource extends TerraformDatasource {
     } else {
       registry = registryUrl;
     }
-    if (!/^https?:\/\//.test(registry)) {
+    if (!regEx(/^https?:\/\//).test(registry)) {
       registry = `https://${registry}`;
     }
     const repository = split.join('/');

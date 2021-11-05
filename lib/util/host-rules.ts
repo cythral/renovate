@@ -85,7 +85,10 @@ function matchesHost(rule: HostRule, search: HostRuleSearch): boolean {
     return false;
   }
   const { hostname } = parsedUrl;
-  return hostname === rule.matchHost || hostname.endsWith(`.${rule.matchHost}`);
+  const dotPrefixedMatchHost = rule.matchHost.startsWith('.')
+    ? rule.matchHost
+    : `.${rule.matchHost}`;
+  return hostname === rule.matchHost || hostname.endsWith(dotPrefixedMatchHost);
 }
 
 export function find(search: HostRuleSearch): HostRule {
@@ -137,6 +140,13 @@ export function hosts({ hostType }: { hostType: string }): string[] {
 
 export function findAll({ hostType }: { hostType: string }): HostRule[] {
   return hostRules.filter((rule) => rule.hostType === hostType);
+}
+
+/**
+ * @returns a deep copy of all known host rules without any filtering
+ */
+export function getAll(): HostRule[] {
+  return clone(hostRules);
 }
 
 export function clear(): void {

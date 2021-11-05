@@ -1,12 +1,15 @@
 import pMap from 'p-map';
 import { GetPkgReleasesConfig, getPkgReleases } from '../../../datasource';
+import { TerraformProviderDatasource } from '../../../datasource/terraform-provider';
 import { logger } from '../../../logger';
 import { get as getVersioning } from '../../../versioning';
 import type { UpdateArtifact, UpdateArtifactsResult } from '../../types';
-import { createHashes } from './hash';
+import { massageProviderLookupName } from '../util';
+import { TerraformProviderHash } from './hash';
 import type { ProviderLock, ProviderLockUpdate } from './types';
 import {
   extractLocks,
+  findLockFile,
   isPinnedVersion,
   readLockFile,
   writeLockUpdates,
@@ -38,7 +41,11 @@ async function updateAllLocks(
       const update: ProviderLockUpdate = {
         newVersion,
         newConstraint: lock.constraints,
-        newHashes: await createHashes(lock.lookupName, newVersion),
+        newHashes: await TerraformProviderHash.createHashes(
+          lock.registryUrl,
+          lock.lookupName,
+          newVersion
+        ),
         ...lock,
       };
       return update;
@@ -56,57 +63,71 @@ export async function updateArtifacts({
 }: UpdateArtifact): Promise<UpdateArtifactsResult[] | null> {
   logger.debug(`terraform.updateArtifacts(${packageFileName})`);
 
-  // TODO remove experimental flag, if functionality is confirmed
-  if (!process.env.RENOVATE_X_TERRAFORM_LOCK_FILE) {
-    logger.debug(
-      `terraform.updateArtifacts: skipping updates. Experimental feature not activated`
-    );
-    return null;
-  }
+  const lockFilePath = findLockFile(packageFileName);
+  try {
+    const lockFileContent = await readLockFile(lockFilePath);
+    if (!lockFileContent) {
+      logger.debug('No .terraform.lock.hcl found');
+      return null;
+    }
+    const locks = extractLocks(lockFileContent);
+    if (!locks) {
+      logger.debug('No Locks in .terraform.lock.hcl found');
+      return null;
+    }
 
-  const lockFileContent = await readLockFile(packageFileName);
-  if (!lockFileContent) {
-    logger.debug('No .terraform.lock.hcl found');
-    return null;
-  }
-  const locks = extractLocks(lockFileContent);
-  if (!locks) {
-    logger.debug('No Locks in .terraform.lock.hcl found');
-    return null;
-  }
+    const updates: ProviderLockUpdate[] = [];
+    if (config.updateType === 'lockFileMaintenance') {
+      // update all locks in the file during maintenance --> only update version in constraints
+      const maintenanceUpdates = await updateAllLocks(locks);
+      updates.push(...maintenanceUpdates);
+    } else {
+      const providerDeps = updatedDeps.filter((dep) =>
+        ['provider', 'required_provider'].includes(dep.depType)
+      );
+      for (const dep of providerDeps) {
+        massageProviderLookupName(dep);
+        const { registryUrls, newVersion, newValue, lookupName } = dep;
 
-  const updates: ProviderLockUpdate[] = [];
-  if (config.updateType === 'lockFileMaintenance') {
-    // update all locks in the file during maintenance --> only update version in constraints
-    const maintenanceUpdates = await updateAllLocks(locks);
-    updates.push(...maintenanceUpdates);
-  } else {
-    // update only specific locks but with constrain updates
-    const lookupName = updatedDeps[0].lookupName;
-    const repository = lookupName.includes('/')
-      ? lookupName
-      : `hashicorp/${lookupName}`;
-    const newConstraint = isPinnedVersion(config.newValue)
-      ? config.newVersion
-      : config.newValue;
-    const updateLock = locks.find((value) => value.lookupName === repository);
-    const update: ProviderLockUpdate = {
-      newVersion: config.newVersion,
-      newConstraint,
-      newHashes: await createHashes(repository, config.newVersion),
-      ...updateLock,
-    };
-    updates.push(update);
-  }
+        const registryUrl = registryUrls
+          ? registryUrls[0]
+          : TerraformProviderDatasource.defaultRegistryUrls[0];
+        const newConstraint = isPinnedVersion(newValue) ? newVersion : newValue;
+        const updateLock = locks.find(
+          (value) => value.lookupName === lookupName
+        );
+        const update: ProviderLockUpdate = {
+          newVersion,
+          newConstraint,
+          newHashes: await TerraformProviderHash.createHashes(
+            registryUrl,
+            lookupName,
+            newVersion
+          ),
+          ...updateLock,
+        };
+        updates.push(update);
+      }
+    }
+    // if no updates have been found or there are failed hashes abort
+    if (
+      updates.length === 0 ||
+      updates.some((value) => value.newHashes == null)
+    ) {
+      return null;
+    }
 
-  // if no updates have been found or there are failed hashes abort
-  if (
-    updates.length === 0 ||
-    updates.some((value) => value.newHashes == null)
-  ) {
-    return null;
+    const res = writeLockUpdates(updates, lockFilePath, lockFileContent);
+    return res ? [res] : null;
+  } catch (err) {
+    /* istanbul ignore next */
+    return [
+      {
+        artifactError: {
+          lockFile: lockFilePath,
+          stderr: err.message,
+        },
+      },
+    ];
   }
-
-  const res = writeLockUpdates(updates, lockFileContent);
-  return res ? [res] : null;
 }

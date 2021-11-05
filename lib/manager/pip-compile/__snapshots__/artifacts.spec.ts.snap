@@ -1,6 +1,6 @@
 // Jest Snapshot v1, https://goo.gl/fbAQLP
 
-exports[`.updateArtifacts() catches errors 1`] = `
+exports[`manager/pip-compile/artifacts catches errors 1`] = `
 Array [
   Object {
     "artifactError": Object {
@@ -11,10 +11,10 @@ Array [
 ]
 `;
 
-exports[`.updateArtifacts() returns null if unchanged 1`] = `
+exports[`manager/pip-compile/artifacts returns null if unchanged 1`] = `
 Array [
   Object {
-    "cmd": "pip-compile",
+    "cmd": "pip-compile requirements.in",
     "options": Object {
       "cwd": "/tmp/github/some/repo",
       "encoding": "utf-8",
@@ -34,10 +34,10 @@ Array [
 ]
 `;
 
-exports[`.updateArtifacts() returns updated requirements.txt 1`] = `
+exports[`manager/pip-compile/artifacts returns updated requirements.txt 1`] = `
 Array [
   Object {
-    "cmd": "pip-compile",
+    "cmd": "pip-compile requirements.in",
     "options": Object {
       "cwd": "/tmp/github/some/repo",
       "encoding": "utf-8",
@@ -57,10 +57,10 @@ Array [
 ]
 `;
 
-exports[`.updateArtifacts() returns updated requirements.txt when doing lockfile maintenance 1`] = `
+exports[`manager/pip-compile/artifacts returns updated requirements.txt when doing lockfile maintenance 1`] = `
 Array [
   Object {
-    "cmd": "pip-compile",
+    "cmd": "pip-compile requirements.in",
     "options": Object {
       "cwd": "/tmp/github/some/repo",
       "encoding": "utf-8",
@@ -80,7 +80,7 @@ Array [
 ]
 `;
 
-exports[`.updateArtifacts() supports docker mode 1`] = `
+exports[`manager/pip-compile/artifacts supports docker mode 1`] = `
 Array [
   Object {
     "cmd": "docker pull renovate/python",
@@ -95,7 +95,7 @@ Array [
     },
   },
   Object {
-    "cmd": "docker run --rm --name=renovate_python --label=renovate_child -v \\"/tmp/github/some/repo\\":\\"/tmp/github/some/repo\\" -v \\"/tmp/renovate/cache\\":\\"/tmp/renovate/cache\\" -w \\"/tmp/github/some/repo\\" renovate/python bash -l -c \\"pip install --user pip-tools && pip-compile\\"",
+    "cmd": "docker run --rm --name=renovate_python --label=renovate_child -v \\"/tmp/github/some/repo\\":\\"/tmp/github/some/repo\\" -v \\"/tmp/renovate/cache\\":\\"/tmp/renovate/cache\\" -w \\"/tmp/github/some/repo\\" renovate/python bash -l -c \\"pip install --user pip-tools && pip-compile requirements.in\\"",
     "options": Object {
       "cwd": "/tmp/github/some/repo",
       "encoding": "utf-8",
@@ -115,7 +115,7 @@ Array [
 ]
 `;
 
-exports[`.updateArtifacts() uses pipenv version from config 1`] = `
+exports[`manager/pip-compile/artifacts uses pipenv version from config 1`] = `
 Array [
   Object {
     "cmd": "docker pull renovate/python",
@@ -130,7 +130,7 @@ Array [
     },
   },
   Object {
-    "cmd": "docker run --rm --name=renovate_python --label=renovate_child -v \\"/tmp/github/some/repo\\":\\"/tmp/github/some/repo\\" -v \\"/tmp/renovate/cache\\":\\"/tmp/renovate/cache\\" -w \\"/tmp/github/some/repo\\" renovate/python bash -l -c \\"pip install --user pip-tools1.2.3 && pip-compile\\"",
+    "cmd": "docker run --rm --name=renovate_python --label=renovate_child -v \\"/tmp/github/some/repo\\":\\"/tmp/github/some/repo\\" -v \\"/tmp/renovate/cache\\":\\"/tmp/renovate/cache\\" -w \\"/tmp/github/some/repo\\" renovate/python bash -l -c \\"pip install --user pip-tools1.2.3 && pip-compile requirements.in\\"",
     "options": Object {
       "cwd": "/tmp/github/some/repo",
       "encoding": "utf-8",

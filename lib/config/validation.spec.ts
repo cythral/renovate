@@ -1,11 +1,10 @@
-import { getName } from '../../test/util';
 import type { RenovateConfig } from './types';
 import * as configValidation from './validation';
 
-describe(getName(), () => {
+describe('config/validation', () => {
   describe('getParentName()', () => {
     it('ignores encrypted in root', () => {
-      expect(configValidation.getParentName('encrypted')).toEqual('');
+      expect(configValidation.getParentName('encrypted')).toBeEmptyString();
     });
     it('handles array types', () => {
       expect(configValidation.getParentName('hostRules[1]')).toEqual(
@@ -353,6 +352,7 @@ describe(getName(), () => {
             datasourceTemplate: 'bar',
             registryUrlTemplate: 'foobar',
             extractVersionTemplate: '^(?<version>v\\d+\\.\\d+)',
+            depTypeTemplate: 'apple',
           },
         ],
       };
@@ -371,6 +371,7 @@ describe(getName(), () => {
             matchStrings: ['ENV (?<currentValue>.*?)\\s'],
             depNameTemplate: 'foo',
             datasourceTemplate: 'bar',
+            depTypeTemplate: 'apple',
             automerge: true,
           },
         ],

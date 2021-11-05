@@ -1,4 +1,4 @@
-import { getConfig, getName, mocked } from '../../../../../test/util';
+import { getConfig, mocked } from '../../../../../test/util';
 import type { Release } from '../../../../datasource';
 import { clone } from '../../../../util/clone';
 import * as _dateUtil from '../../../../util/date';
@@ -36,7 +36,7 @@ const releases: Release[] = [
   },
 ];
 
-describe(getName(), () => {
+describe('workers/repository/process/lookup/filter-checks', () => {
   let sortedReleases: Release[];
   beforeEach(() => {
     config = getConfig();
@@ -58,7 +58,7 @@ describe(getName(), () => {
         sortedReleases
       );
       expect(res).toMatchSnapshot();
-      expect(res.pendingChecks).toBe(false);
+      expect(res.pendingChecks).toBeFalse();
       expect(res.pendingReleases).toHaveLength(0);
       expect(res.release.version).toEqual('1.0.4');
     });
@@ -73,7 +73,7 @@ describe(getName(), () => {
         sortedReleases
       );
       expect(res).toMatchSnapshot();
-      expect(res.pendingChecks).toBe(false);
+      expect(res.pendingChecks).toBeFalse();
       expect(res.pendingReleases).toHaveLength(0);
       expect(res.release.version).toEqual('1.0.4');
     });
@@ -88,7 +88,7 @@ describe(getName(), () => {
         sortedReleases
       );
       expect(res).toMatchSnapshot();
-      expect(res.pendingChecks).toBe(true);
+      expect(res.pendingChecks).toBeTrue();
       expect(res.pendingReleases).toHaveLength(0);
       expect(res.release.version).toEqual('1.0.4');
     });
@@ -103,7 +103,7 @@ describe(getName(), () => {
         sortedReleases
       );
       expect(res).toMatchSnapshot();
-      expect(res.pendingChecks).toBe(false);
+      expect(res.pendingChecks).toBeFalse();
       expect(res.pendingReleases).toHaveLength(2);
       expect(res.release.version).toEqual('1.0.2');
     });
@@ -118,7 +118,7 @@ describe(getName(), () => {
         sortedReleases
       );
       expect(res).toMatchSnapshot();
-      expect(res.pendingChecks).toBe(false);
+      expect(res.pendingChecks).toBeFalse();
       expect(res.pendingReleases).toHaveLength(2);
       expect(res.release.version).toEqual('1.0.2');
     });
@@ -134,7 +134,7 @@ describe(getName(), () => {
         sortedReleases
       );
       expect(res).toMatchSnapshot();
-      expect(res.pendingChecks).toBe(false);
+      expect(res.pendingChecks).toBeFalse();
       expect(res.pendingReleases).toHaveLength(0);
       expect(res.release.version).toEqual('1.0.4');
     });
@@ -149,7 +149,7 @@ describe(getName(), () => {
         sortedReleases
       );
       expect(res).toMatchSnapshot();
-      expect(res.pendingChecks).toBe(false);
+      expect(res.pendingChecks).toBeFalse();
       expect(res.pendingReleases).toHaveLength(1);
       expect(res.release.version).toEqual('1.0.3');
     });
@@ -169,7 +169,7 @@ describe(getName(), () => {
         sortedReleases
       );
       expect(res).toMatchSnapshot();
-      expect(res.pendingChecks).toBe(false);
+      expect(res.pendingChecks).toBeFalse();
       expect(res.pendingReleases).toHaveLength(3);
       expect(res.release.version).toEqual('1.0.1');
     });

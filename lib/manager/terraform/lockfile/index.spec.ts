@@ -1,9 +1,9 @@
 import { join } from 'upath';
-import { fs, getName, loadFixture, mocked } from '../../../../test/util';
-import { setAdminConfig } from '../../../config/admin';
+import { fs, loadFixture, mocked } from '../../../../test/util';
+import { setGlobalConfig } from '../../../config/global';
 import { getPkgReleases } from '../../../datasource';
 import type { UpdateArtifactsConfig } from '../../types';
-import * as hash from './hash';
+import { TerraformProviderHash } from './hash';
 import { updateArtifacts } from './index';
 
 // auto-mock fs
@@ -22,27 +22,22 @@ const adminConfig = {
 };
 
 const validLockfile = loadFixture('validLockfile.hcl');
+const validLockfile2 = loadFixture('validLockfile2.hcl');
 
-const mockHash = mocked(hash).createHashes;
+const mockHash = mocked(TerraformProviderHash).createHashes;
 const mockGetPkgReleases = getPkgReleases as jest.MockedFunction<
   typeof getPkgReleases
 >;
 
-describe(getName(), () => {
+describe('manager/terraform/lockfile/index', () => {
   beforeEach(() => {
     jest.resetAllMocks();
     jest.resetModules();
-    setAdminConfig(adminConfig);
-  });
-
-  afterEach(() => {
-    delete process.env.RENOVATE_X_TERRAFORM_LOCK_FILE;
+    setGlobalConfig(adminConfig);
   });
 
   it('returns null if no .terraform.lock.hcl found', async () => {
     fs.readLocalFile.mockResolvedValueOnce(null);
-
-    process.env.RENOVATE_X_TERRAFORM_LOCK_FILE = 'test';
 
     expect(
       await updateArtifacts({
@@ -57,8 +52,6 @@ describe(getName(), () => {
   it('returns null if .terraform.lock.hcl is empty', async () => {
     fs.readLocalFile.mockResolvedValueOnce('empty' as any);
 
-    process.env.RENOVATE_X_TERRAFORM_LOCK_FILE = 'test';
-
     expect(
       await updateArtifacts({
         packageFileName: 'main.tf',
@@ -69,28 +62,28 @@ describe(getName(), () => {
     ).toBeNull();
   });
 
-  it('update single dependency with exact constraint', async () => {
+  it('update single dependency with exact constraint and depType provider', async () => {
     fs.readLocalFile.mockResolvedValueOnce(validLockfile as any);
+    fs.getSiblingFileName.mockReturnValueOnce('.terraform.lock.hcl');
 
     mockHash.mockResolvedValueOnce([
       'h1:lDsKRxDRXPEzA4AxkK4t+lJd3IQIP2UoaplJGjQSp2s=',
       'h1:6zB2hX7YIOW26OrKsLJn0uLMnjqbPNxcz9RhlWEuuSY=',
     ]);
 
-    const localConfig: UpdateArtifactsConfig = {
-      updateType: 'minor',
-      newVersion: '3.36.0',
-      newValue: '3.36.0',
-      ...config,
-    };
-
-    process.env.RENOVATE_X_TERRAFORM_LOCK_FILE = 'test';
-
     const result = await updateArtifacts({
       packageFileName: 'main.tf',
-      updatedDeps: [{ depName: 'hashicorp/aws', lookupName: 'hashicorp/aws' }],
+      updatedDeps: [
+        {
+          depName: 'hashicorp/aws',
+          lookupName: 'hashicorp/aws',
+          depType: 'provider',
+          newVersion: '3.36.0',
+          newValue: '3.36.0',
+        },
+      ],
       newPackageFileContent: '',
-      config: localConfig,
+      config,
     });
     expect(result).not.toBeNull();
     expect(result).toBeArrayOfSize(1);
@@ -101,28 +94,79 @@ describe(getName(), () => {
     expect(mockHash.mock.calls).toMatchSnapshot();
   });
 
-  it('update single dependency with range constraint and minor update', async () => {
+  it('update single dependency with exact constraint and and depType required_provider', async () => {
     fs.readLocalFile.mockResolvedValueOnce(validLockfile as any);
+    fs.getSiblingFileName.mockReturnValueOnce('.terraform.lock.hcl');
 
     mockHash.mockResolvedValueOnce([
       'h1:lDsKRxDRXPEzA4AxkK4t+lJd3IQIP2UoaplJGjQSp2s=',
       'h1:6zB2hX7YIOW26OrKsLJn0uLMnjqbPNxcz9RhlWEuuSY=',
     ]);
 
-    const localConfig: UpdateArtifactsConfig = {
-      updateType: 'minor',
-      newVersion: '2.56.0',
-      newValue: '~> 2.50',
-      ...config,
-    };
+    const result = await updateArtifacts({
+      packageFileName: 'main.tf',
+      updatedDeps: [
+        {
+          depName: 'hashicorp/aws',
+          lookupName: 'hashicorp/aws',
+          depType: 'required_provider',
+          newVersion: '3.36.0',
+          newValue: '3.36.0',
+        },
+      ],
+      newPackageFileContent: '',
+      config,
+    });
+    expect(result).not.toBeNull();
+    expect(result).toBeArrayOfSize(1);
+    expect(result[0].file).not.toBeNull();
+    expect(result[0].file).toMatchSnapshot();
 
-    process.env.RENOVATE_X_TERRAFORM_LOCK_FILE = 'test';
+    expect(mockHash.mock.calls).toBeArrayOfSize(1);
+    expect(mockHash.mock.calls).toMatchSnapshot();
+  });
+
+  it('do not update dependency with depType module', async () => {
+    const result = await updateArtifacts({
+      packageFileName: 'main.tf',
+      updatedDeps: [
+        {
+          depName: 'terraform-aws-modules/vpc/aws',
+          lookupName: 'terraform-aws-modules/vpc/aws',
+          depType: 'module',
+          newVersion: '3.36.0',
+          newValue: '3.36.0',
+        },
+      ],
+      newPackageFileContent: '',
+      config,
+    });
+    expect(result).toBeNull();
+  });
+
+  it('update single dependency with range constraint and minor update from private registry', async () => {
+    fs.readLocalFile.mockResolvedValueOnce(validLockfile as any);
+    fs.getSiblingFileName.mockReturnValueOnce('.terraform.lock.hcl');
+
+    mockHash.mockResolvedValueOnce([
+      'h1:lDsKRxDRXPEzA4AxkK4t+lJd3IQIP2UoaplJGjQSp2s=',
+      'h1:6zB2hX7YIOW26OrKsLJn0uLMnjqbPNxcz9RhlWEuuSY=',
+    ]);
 
     const result = await updateArtifacts({
       packageFileName: 'main.tf',
-      updatedDeps: [{ depName: 'azurerm', lookupName: 'azurerm' }],
+      updatedDeps: [
+        {
+          depName: 'azurerm',
+          depType: 'provider',
+          lookupName: 'azurerm',
+          registryUrls: ['https://registry.example.com'],
+          newVersion: '2.56.0',
+          newValue: '~> 2.50',
+        },
+      ],
       newPackageFileContent: '',
-      config: localConfig,
+      config,
     });
     expect(result).not.toBeNull();
     expect(result).toBeArrayOfSize(1);
@@ -135,26 +179,26 @@ describe(getName(), () => {
 
   it('update single dependency with range constraint and major update', async () => {
     fs.readLocalFile.mockResolvedValueOnce(validLockfile as any);
+    fs.getSiblingFileName.mockReturnValueOnce('.terraform.lock.hcl');
 
     mockHash.mockResolvedValueOnce([
       'h1:lDsKRxDRXPEzA4AxkK4t+lJd3IQIP2UoaplJGjQSp2s=',
       'h1:6zB2hX7YIOW26OrKsLJn0uLMnjqbPNxcz9RhlWEuuSY=',
     ]);
 
-    const localConfig: UpdateArtifactsConfig = {
-      updateType: 'major',
-      newVersion: '3.1.0',
-      newValue: '~> 3.0',
-      ...config,
-    };
-
-    process.env.RENOVATE_X_TERRAFORM_LOCK_FILE = 'test';
-
     const result = await updateArtifacts({
       packageFileName: 'main.tf',
-      updatedDeps: [{ depName: 'random', lookupName: 'hashicorp/random' }],
+      updatedDeps: [
+        {
+          depName: 'random',
+          lookupName: 'hashicorp/random',
+          depType: 'provider',
+          newVersion: '3.1.0',
+          newValue: '~> 3.0',
+        },
+      ],
       newPackageFileContent: '',
-      config: localConfig,
+      config,
     });
     expect(result).not.toBeNull();
     expect(result).toBeArrayOfSize(1);
@@ -165,8 +209,94 @@ describe(getName(), () => {
     expect(mockHash.mock.calls).toMatchSnapshot();
   });
 
+  it('update single dependency in subfolder', async () => {
+    fs.readLocalFile.mockResolvedValueOnce(validLockfile as any);
+    fs.getSiblingFileName.mockReturnValueOnce('test/.terraform.lock.hcl');
+
+    mockHash.mockResolvedValueOnce([
+      'h1:lDsKRxDRXPEzA4AxkK4t+lJd3IQIP2UoaplJGjQSp2s=',
+      'h1:6zB2hX7YIOW26OrKsLJn0uLMnjqbPNxcz9RhlWEuuSY=',
+    ]);
+
+    const result = await updateArtifacts({
+      packageFileName: 'test/main.tf',
+      updatedDeps: [
+        {
+          depName: 'random',
+          lookupName: 'hashicorp/random',
+          depType: 'provider',
+          newVersion: '3.1.0',
+          newValue: '~> 3.0',
+        },
+      ],
+      newPackageFileContent: '',
+      config,
+    });
+    expect(result).not.toBeNull();
+    expect(result).toBeArrayOfSize(1);
+    expect(result[0].file).not.toBeNull();
+    expect(result[0].file).toMatchSnapshot();
+
+    expect(mockHash.mock.calls).toBeArrayOfSize(1);
+    expect(mockHash.mock.calls).toMatchSnapshot();
+  });
+
+  it('update multiple dependencies which are not ordered', async () => {
+    fs.readLocalFile.mockResolvedValue(validLockfile2 as any);
+    fs.getSiblingFileName.mockReturnValue('test/.terraform.lock.hcl');
+
+    mockHash.mockResolvedValue([
+      'h1:lDsKRxDRXPEzA4AxkK4t+lJd3IQIP2UoaplJGjQSp2s=',
+      'h1:6zB2hX7YIOW26OrKsLJn0uLMnjqbPNxcz9RhlWEuuSY=',
+    ]);
+
+    const result = await updateArtifacts({
+      packageFileName: 'test/main.tf',
+      updatedDeps: [
+        {
+          depName: 'aws',
+          lookupName: 'hashicorp/aws',
+          depType: 'provider',
+          newVersion: '3.1.0',
+          newValue: '~> 3.0',
+        },
+        {
+          depName: 'random',
+          lookupName: 'hashicorp/random',
+          depType: 'provider',
+          newVersion: '3.1.0',
+          newValue: '~> 3.0',
+        },
+        {
+          depName: 'azurerm',
+          lookupName: 'hashicorp/azurerm',
+          depType: 'provider',
+          newVersion: '2.56.0',
+          newValue: '~> 2.50',
+        },
+        {
+          depName: 'proxmox',
+          lookupName: 'Telmate/proxmox',
+          depType: 'provider',
+          newVersion: '2.7.0',
+          newValue: '~> 2.7.0',
+        },
+      ],
+      newPackageFileContent: '',
+      config,
+    });
+    expect(result).not.toBeNull();
+    expect(result).toBeArrayOfSize(1);
+    expect(result[0].file).not.toBeNull();
+    expect(result[0].file).toMatchSnapshot();
+
+    expect(mockHash.mock.calls).toBeArrayOfSize(4);
+    expect(mockHash.mock.calls).toMatchSnapshot();
+  });
+
   it('do full lock file maintenance', async () => {
     fs.readLocalFile.mockResolvedValueOnce(validLockfile as any);
+    fs.getSiblingFileName.mockReturnValueOnce('.terraform.lock.hcl');
 
     mockGetPkgReleases
       .mockResolvedValueOnce({
@@ -221,7 +351,78 @@ describe(getName(), () => {
       ...config,
     };
 
-    process.env.RENOVATE_X_TERRAFORM_LOCK_FILE = 'test';
+    const result = await updateArtifacts({
+      packageFileName: '',
+      updatedDeps: [],
+      newPackageFileContent: '',
+      config: localConfig,
+    });
+    expect(result).not.toBeNull();
+    expect(result).toBeArrayOfSize(1);
+
+    result.forEach((value) => expect(value.file).not.toBeNull());
+    result.forEach((value) => expect(value.file).toMatchSnapshot());
+
+    expect(mockHash.mock.calls).toBeArrayOfSize(2);
+    expect(mockHash.mock.calls).toMatchSnapshot();
+  });
+
+  it('do full lock file maintenance with lockfile in subfolder', async () => {
+    fs.readLocalFile.mockResolvedValueOnce(validLockfile as any);
+    fs.getSiblingFileName.mockReturnValueOnce('subfolder/.terraform.lock.hcl');
+
+    mockGetPkgReleases
+      .mockResolvedValueOnce({
+        // aws
+        releases: [
+          {
+            version: '2.30.0',
+          },
+          {
+            version: '3.0.0',
+          },
+          {
+            version: '3.36.0',
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        // azurerm
+        releases: [
+          {
+            version: '2.50.0',
+          },
+          {
+            version: '2.55.0',
+          },
+          {
+            version: '2.56.0',
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        // random
+        releases: [
+          {
+            version: '2.2.1',
+          },
+          {
+            version: '2.2.2',
+          },
+          {
+            version: '3.0.0',
+          },
+        ],
+      });
+    mockHash.mockResolvedValue([
+      'h1:lDsKRxDRXPEzA4AxkK4t+lJd3IQIP2UoaplJGjQSp2s=',
+      'h1:6zB2hX7YIOW26OrKsLJn0uLMnjqbPNxcz9RhlWEuuSY=',
+    ]);
+
+    const localConfig: UpdateArtifactsConfig = {
+      updateType: 'lockFileMaintenance',
+      ...config,
+    };
 
     const result = await updateArtifacts({
       packageFileName: '',
@@ -343,8 +544,6 @@ describe(getName(), () => {
       updateType: 'lockFileMaintenance',
       ...config,
     };
-
-    process.env.RENOVATE_X_TERRAFORM_LOCK_FILE = 'test';
 
     const result = await updateArtifacts({
       packageFileName: '',

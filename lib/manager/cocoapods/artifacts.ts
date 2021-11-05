@@ -10,9 +10,10 @@ import {
   writeLocalFile,
 } from '../../util/fs';
 import { getRepoStatus } from '../../util/git';
+import { regEx } from '../../util/regex';
 import type { UpdateArtifact, UpdateArtifactsResult } from '../types';
 
-const pluginRegex = /^\s*plugin\s*(['"])(?<plugin>[^'"]+)\1/;
+const pluginRegex = /^\s*plugin\s*(['"])(?<plugin>[^'"]+)\1/; // TODO #12070
 
 function getPluginCommands(content: string): string[] {
   const result = new Set<string>();
@@ -62,18 +63,16 @@ export async function updateArtifacts({
     return null;
   }
 
-  const match = new RegExp(/^COCOAPODS: (?<cocoapodsVersion>.*)$/m).exec(
+  const match = regEx(/^COCOAPODS: (?<cocoapodsVersion>.*)$/m).exec(
     existingLockFileContent
   );
   const tagConstraint = match?.groups?.cocoapodsVersion ?? null;
-
-  const cacheDir = await ensureCacheDir('./others/cocoapods', 'CP_HOME_DIR');
 
   const cmd = [...getPluginCommands(newPackageFileContent), 'pod install'];
   const execOptions: ExecOptions = {
     cwdFile: packageFileName,
     extraEnv: {
-      CP_HOME_DIR: cacheDir,
+      CP_HOME_DIR: await ensureCacheDir('cocoapods'),
     },
     docker: {
       image: 'cocoapods',

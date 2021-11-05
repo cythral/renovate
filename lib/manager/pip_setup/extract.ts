@@ -1,9 +1,10 @@
-import { getAdminConfig } from '../../config/admin';
-import * as datasourcePypi from '../../datasource/pypi';
+import { getGlobalConfig } from '../../config/global';
+import { PypiDatasource } from '../../datasource/pypi';
 import { logger } from '../../logger';
 import { SkipReason } from '../../types';
 import { exec } from '../../util/exec';
 import { isSkipComment } from '../../util/ignore';
+import { regEx } from '../../util/regex';
 import { dependencyPattern } from '../pip_requirements/extract';
 import type { ExtractConfig, PackageDependency, PackageFile } from '../types';
 import type { PythonSetup } from './types';
@@ -49,7 +50,7 @@ export async function extractSetupFile(
   let cmd = 'python';
   const extractPy = await getExtractFile();
   const args = [`"${extractPy}"`, `"${packageFile}"`];
-  if (getAdminConfig().binarySource !== 'docker') {
+  if (getGlobalConfig().binarySource !== 'docker') {
     logger.debug('Running python via global command');
     cmd = await getPythonAlias();
   }
@@ -63,7 +64,7 @@ export async function extractSetupFile(
   });
   if (res.stderr) {
     const stderr = res.stderr
-      .replace(/.*\n\s*import imp/, '')
+      .replace(regEx(/.*\n\s*import imp/), '')
       .trim()
       .replace('fatal: No names found, cannot describe anything.', '');
     if (stderr.length) {
@@ -97,7 +98,7 @@ export async function extractPackageFile(
       requires.push(...req);
     }
   }
-  const regex = new RegExp(`^${dependencyPattern}`);
+  const regex = regEx(`^${dependencyPattern}`);
   const lines = content.split('\n');
   const deps = requires
     .map((req) => {
@@ -122,7 +123,7 @@ export async function extractPackageFile(
         depName,
         currentValue,
         managerData: { lineNumber },
-        datasource: datasourcePypi.id,
+        datasource: PypiDatasource.id,
       };
       return dep;
     })

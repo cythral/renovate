@@ -1,9 +1,8 @@
-import { getName } from '../../../../test/util';
 import { detectMonorepos } from './monorepo';
 
 jest.mock('./pnpm');
 
-describe(getName(), () => {
+describe('manager/npm/extract/monorepo', () => {
   describe('.extractPackageFile()', () => {
     it('uses lerna package settings', async () => {
       const packageFiles = [
@@ -56,8 +55,9 @@ describe(getName(), () => {
         packageFiles.some((packageFile) =>
           packageFile.deps?.some((dep) => dep.skipReason)
         )
-      ).toBe(true);
+      ).toBeTrue();
     });
+
     it('updates internal packages', async () => {
       const packageFiles = [
         {
@@ -109,8 +109,9 @@ describe(getName(), () => {
         packageFiles.some((packageFile) =>
           packageFile.deps?.some((dep) => dep.skipReason)
         )
-      ).toBe(false);
+      ).toBeFalse();
     });
+
     it('uses yarn workspaces package settings with lerna', async () => {
       const packageFiles = [
         {
@@ -135,6 +136,7 @@ describe(getName(), () => {
       expect(packageFiles).toMatchSnapshot();
       expect(packageFiles[1].managerData.lernaJsonFile).toEqual('lerna.json');
     });
+
     it('uses yarn workspaces package settings without lerna', async () => {
       const packageFiles = [
         {
@@ -153,6 +155,34 @@ describe(getName(), () => {
         },
       ];
       await detectMonorepos(packageFiles, false);
+      // FIXME: explicit assert condition
+      expect(packageFiles).toMatchSnapshot();
+    });
+
+    it('uses yarnZeroInstall and skipInstalls from yarn workspaces package settings', async () => {
+      const packageFiles = [
+        {
+          packageFile: 'package.json',
+          managerData: {
+            yarnZeroInstall: true,
+          },
+          skipInstalls: false,
+          npmrc: '@org:registry=//registry.some.org\n',
+          yarnWorkspacesPackages: 'packages/*',
+        },
+        {
+          packageFile: 'packages/a/package.json',
+          packageJsonName: '@org/a',
+          yarnLock: 'yarn.lock',
+        },
+        {
+          packageFile: 'packages/b/package.json',
+          packageJsonName: '@org/b',
+          skipInstalls: true,
+        },
+      ];
+      await detectMonorepos(packageFiles, false);
+      // FIXME: explicit assert condition
       expect(packageFiles).toMatchSnapshot();
     });
   });

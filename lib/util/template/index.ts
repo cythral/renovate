@@ -1,14 +1,15 @@
 import is from '@sindresorhus/is';
 import * as handlebars from 'handlebars';
-import { getAdminConfig } from '../../config/admin';
+import { getGlobalConfig } from '../../config/global';
 import { logger } from '../../logger';
 import { clone } from '../clone';
 
 handlebars.registerHelper('encodeURIComponent', encodeURIComponent);
 
 // istanbul ignore next
-handlebars.registerHelper('replace', (find, replace, context) =>
-  context.replace(new RegExp(find, 'g'), replace)
+handlebars.registerHelper(
+  'replace',
+  (find, replace, context) => context.replace(new RegExp(find, 'g'), replace) // TODO #12070
 );
 
 export const exposedConfigOptions = [
@@ -139,14 +140,14 @@ function getFilteredObject(input: CompileInput): any {
   return res;
 }
 
-const templateRegex = /{{(#(if|unless) )?([a-zA-Z]+)}}/g;
+const templateRegex = /{{(#(if|unless) )?([a-zA-Z]+)}}/g; // TODO #12070
 
 export function compile(
   template: string,
   input: CompileInput,
   filterFields = true
 ): string {
-  const data = { ...getAdminConfig(), ...input };
+  const data = { ...getGlobalConfig(), ...input };
   const filteredInput = filterFields ? getFilteredObject(data) : data;
   logger.trace({ template, filteredInput }, 'Compiling template');
   if (filterFields) {

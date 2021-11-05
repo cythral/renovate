@@ -1,8 +1,8 @@
 // TODO fix mocks
 import { Platform, RepoParams } from '..';
 import * as httpMock from '../../../test/http-mock';
-import { getName } from '../../../test/util';
 import {
+  CONFIG_GIT_URL_UNAVAILABLE,
   REPOSITORY_ARCHIVED,
   REPOSITORY_CHANGED,
   REPOSITORY_DISABLED,
@@ -16,7 +16,7 @@ import * as _hostRules from '../../util/host-rules';
 
 const gitlabApiHost = 'https://gitlab.com';
 
-describe(getName(), () => {
+describe('platform/gitlab/index', () => {
   let gitlab: Platform;
   let hostRules: jest.Mocked<typeof _hostRules>;
   let git: jest.Mocked<typeof _git>;
@@ -40,7 +40,7 @@ describe(getName(), () => {
       '0d9c7726c3d628b7e28af234595cfd20febdbf8e'
     );
     hostRules.find.mockReturnValue({
-      token: 'abc123',
+      token: '123test',
     });
     delete process.env.GITLAB_IGNORE_REPO_URL;
   });
@@ -114,6 +114,19 @@ describe(getName(), () => {
         })
       ).toMatchSnapshot();
       expect(httpMock.getTrace()).toMatchSnapshot();
+    });
+
+    it(`should reuse existing gitAuthor`, async () => {
+      httpMock.scope(gitlabApiHost).get('/api/v4/version').reply(200, {
+        version: '13.3.6-ee',
+      });
+      expect(
+        await gitlab.initPlatform({
+          token: 'some-token',
+          endpoint: undefined,
+          gitAuthor: 'somebody',
+        })
+      ).toEqual({ endpoint: 'https://gitlab.com/api/v4/' });
     });
   });
 
@@ -286,6 +299,40 @@ describe(getName(), () => {
       expect(httpMock.getTrace()).toMatchSnapshot();
     });
 
+    it('should use ssh_url_to_repo if gitUrl is set to ssh', async () => {
+      httpMock
+        .scope(gitlabApiHost)
+        .get('/api/v4/projects/some%2Frepo%2Fproject')
+        .reply(200, {
+          default_branch: 'master',
+          http_url_to_repo: `https://gitlab.com/some%2Frepo%2Fproject.git`,
+          ssh_url_to_repo: `ssh://git@gitlab.com/some%2Frepo%2Fproject.git`,
+        });
+      await gitlab.initRepo({
+        repository: 'some/repo/project',
+        gitUrl: 'ssh',
+      });
+      expect(httpMock.getTrace()).toMatchSnapshot();
+      expect(git.initRepo.mock.calls).toMatchSnapshot();
+    });
+
+    it('should throw if ssh_url_to_repo is not present but gitUrl is set to ssh', async () => {
+      httpMock
+        .scope(gitlabApiHost)
+        .get('/api/v4/projects/some%2Frepo%2Fproject')
+        .reply(200, {
+          default_branch: 'master',
+          http_url_to_repo: `https://gitlab.com/some%2Frepo%2Fproject.git`,
+        });
+      await expect(
+        gitlab.initRepo({
+          repository: 'some/repo/project',
+          gitUrl: 'ssh',
+        })
+      ).rejects.toThrow(CONFIG_GIT_URL_UNAVAILABLE);
+      expect(httpMock.getTrace()).toMatchSnapshot();
+    });
+
     it('should fall back respecting when GITLAB_IGNORE_REPO_URL is set', async () => {
       process.env.GITLAB_IGNORE_REPO_URL = 'true';
       const selfHostedUrl = 'http://mycompany.com/gitlab';
@@ -330,7 +377,7 @@ describe(getName(), () => {
           merge_method: 'merge',
         }
       );
-      expect(await gitlab.getRepoForceRebase()).toBe(false);
+      expect(await gitlab.getRepoForceRebase()).toBeFalse();
       expect(httpMock.getTrace()).toMatchSnapshot();
     });
 
@@ -345,7 +392,7 @@ describe(getName(), () => {
           merge_method: 'ff',
         }
       );
-      expect(await gitlab.getRepoForceRebase()).toBe(true);
+      expect(await gitlab.getRepoForceRebase()).toBeTrue();
       expect(httpMock.getTrace()).toMatchSnapshot();
     });
   });
@@ -354,7 +401,9 @@ describe(getName(), () => {
     it('should return null if no PR exists', async () => {
       const scope = await initRepo();
       scope
-        .get('/api/v4/projects/some%2Frepo/merge_requests?per_page=100')
+        .get(
+          '/api/v4/projects/some%2Frepo/merge_requests?per_page=100&scope=created_by_me'
+        )
         .reply(200, []);
       const pr = await gitlab.getBranchPr('some-branch');
       expect(pr).toBeNull();
@@ -363,7 +412,9 @@ describe(getName(), () => {
     it('should return the PR object', async () => {
       const scope = await initRepo();
       scope
-        .get('/api/v4/projects/some%2Frepo/merge_requests?per_page=100')
+        .get(
+          '/api/v4/projects/some%2Frepo/merge_requests?per_page=100&scope=created_by_me'
+        )
         .reply(200, [
           {
             iid: 91,
@@ -400,7 +451,9 @@ describe(getName(), () => {
     it('should strip draft prefix from title', async () => {
       const scope = await initRepo();
       scope
-        .get('/api/v4/projects/some%2Frepo/merge_requests?per_page=100')
+        .get(
+          '/api/v4/projects/some%2Frepo/merge_requests?per_page=100&scope=created_by_me'
+        )
         .reply(200, [
           {
             iid: 91,
@@ -437,7 +490,9 @@ describe(getName(), () => {
     it('should strip deprecated draft prefix from title', async () => {
       const scope = await initRepo();
       scope
-        .get('/api/v4/projects/some%2Frepo/merge_requests?per_page=100')
+        .get(
+          '/api/v4/projects/some%2Frepo/merge_requests?per_page=100&scope=created_by_me'
+        )
         .reply(200, [
           {
             iid: 91,
@@ -472,15 +527,7 @@ describe(getName(), () => {
       expect(httpMock.getTrace()).toMatchSnapshot();
     });
   });
-  describe('getBranchStatus(branchName, requiredStatusChecks)', () => {
-    it('returns success if requiredStatusChecks null', async () => {
-      const res = await gitlab.getBranchStatus('somebranch', null);
-      expect(res).toEqual(BranchStatus.green);
-    });
-    it('return failed if unsupported requiredStatusChecks', async () => {
-      const res = await gitlab.getBranchStatus('somebranch', ['foo']);
-      expect(res).toEqual(BranchStatus.red);
-    });
+  describe('getBranchStatus(branchName, ignoreTests)', () => {
     it('returns pending if no results', async () => {
       const scope = await initRepo();
       scope
@@ -488,7 +535,7 @@ describe(getName(), () => {
           '/api/v4/projects/some%2Frepo/repository/commits/0d9c7726c3d628b7e28af234595cfd20febdbf8e/statuses'
         )
         .reply(200, []);
-      const res = await gitlab.getBranchStatus('somebranch', []);
+      const res = await gitlab.getBranchStatus('somebranch');
       expect(res).toEqual(BranchStatus.yellow);
       expect(httpMock.getTrace()).toMatchSnapshot();
     });
@@ -499,7 +546,7 @@ describe(getName(), () => {
           '/api/v4/projects/some%2Frepo/repository/commits/0d9c7726c3d628b7e28af234595cfd20febdbf8e/statuses'
         )
         .reply(200, [{ status: 'success' }, { status: 'success' }]);
-      const res = await gitlab.getBranchStatus('somebranch', []);
+      const res = await gitlab.getBranchStatus('somebranch');
       expect(res).toEqual(BranchStatus.green);
       expect(httpMock.getTrace()).toMatchSnapshot();
     });
@@ -513,7 +560,7 @@ describe(getName(), () => {
           { status: 'success' },
           { status: 'failed', allow_failure: true },
         ]);
-      const res = await gitlab.getBranchStatus('somebranch', []);
+      const res = await gitlab.getBranchStatus('somebranch');
       expect(res).toEqual(BranchStatus.green);
       expect(httpMock.getTrace()).toMatchSnapshot();
     });
@@ -524,7 +571,7 @@ describe(getName(), () => {
           '/api/v4/projects/some%2Frepo/repository/commits/0d9c7726c3d628b7e28af234595cfd20febdbf8e/statuses'
         )
         .reply(200, [{ status: 'failed', allow_failure: true }]);
-      const res = await gitlab.getBranchStatus('somebranch', []);
+      const res = await gitlab.getBranchStatus('somebranch');
       expect(res).toEqual(BranchStatus.green);
       expect(httpMock.getTrace()).toMatchSnapshot();
     });
@@ -535,7 +582,7 @@ describe(getName(), () => {
           '/api/v4/projects/some%2Frepo/repository/commits/0d9c7726c3d628b7e28af234595cfd20febdbf8e/statuses'
         )
         .reply(200, [{ status: 'success' }, { status: 'skipped' }]);
-      const res = await gitlab.getBranchStatus('somebranch', []);
+      const res = await gitlab.getBranchStatus('somebranch');
       expect(res).toEqual(BranchStatus.green);
       expect(httpMock.getTrace()).toMatchSnapshot();
     });
@@ -546,7 +593,7 @@ describe(getName(), () => {
           '/api/v4/projects/some%2Frepo/repository/commits/0d9c7726c3d628b7e28af234595cfd20febdbf8e/statuses'
         )
         .reply(200, [{ status: 'skipped' }]);
-      const res = await gitlab.getBranchStatus('somebranch', []);
+      const res = await gitlab.getBranchStatus('somebranch');
       expect(res).toEqual(BranchStatus.yellow);
       expect(httpMock.getTrace()).toMatchSnapshot();
     });
@@ -557,7 +604,7 @@ describe(getName(), () => {
           '/api/v4/projects/some%2Frepo/repository/commits/0d9c7726c3d628b7e28af234595cfd20febdbf8e/statuses'
         )
         .reply(200, [{ status: 'skipped' }, { status: 'failed' }]);
-      const res = await gitlab.getBranchStatus('somebranch', []);
+      const res = await gitlab.getBranchStatus('somebranch');
       expect(res).toEqual(BranchStatus.red);
       expect(httpMock.getTrace()).toMatchSnapshot();
     });
@@ -572,7 +619,7 @@ describe(getName(), () => {
           { status: 'failed', allow_failure: true },
           { status: 'failed' },
         ]);
-      const res = await gitlab.getBranchStatus('somebranch', []);
+      const res = await gitlab.getBranchStatus('somebranch');
       expect(res).toEqual(BranchStatus.red);
       expect(httpMock.getTrace()).toMatchSnapshot();
     });
@@ -583,7 +630,7 @@ describe(getName(), () => {
           '/api/v4/projects/some%2Frepo/repository/commits/0d9c7726c3d628b7e28af234595cfd20febdbf8e/statuses'
         )
         .reply(200, [{ status: 'success' }, { status: 'foo' }]);
-      const res = await gitlab.getBranchStatus('somebranch', []);
+      const res = await gitlab.getBranchStatus('somebranch');
       expect(res).toEqual(BranchStatus.yellow);
       expect(httpMock.getTrace()).toMatchSnapshot();
     });
@@ -591,7 +638,7 @@ describe(getName(), () => {
       expect.assertions(2);
       git.branchExists.mockReturnValue(false);
       await initRepo();
-      await expect(gitlab.getBranchStatus('somebranch', [])).rejects.toThrow(
+      await expect(gitlab.getBranchStatus('somebranch')).rejects.toThrow(
         REPOSITORY_CHANGED
       );
       expect(httpMock.getTrace()).toMatchSnapshot();
@@ -677,7 +724,7 @@ describe(getName(), () => {
       httpMock
         .scope(gitlabApiHost)
         .get(
-          '/api/v4/projects/undefined/issues?per_page=100&author_id=undefined&state=opened'
+          '/api/v4/projects/undefined/issues?per_page=100&scope=created_by_me&state=opened'
         )
         .reply(200, [
           {
@@ -697,7 +744,7 @@ describe(getName(), () => {
       httpMock
         .scope(gitlabApiHost)
         .get(
-          '/api/v4/projects/undefined/issues?per_page=100&author_id=undefined&state=opened'
+          '/api/v4/projects/undefined/issues?per_page=100&scope=created_by_me&state=opened'
         )
         .reply(200, [
           {
@@ -721,7 +768,7 @@ describe(getName(), () => {
       httpMock
         .scope(gitlabApiHost)
         .get(
-          '/api/v4/projects/undefined/issues?per_page=100&author_id=undefined&state=opened'
+          '/api/v4/projects/undefined/issues?per_page=100&scope=created_by_me&state=opened'
         )
         .reply(200, [
           {
@@ -747,7 +794,7 @@ describe(getName(), () => {
       httpMock
         .scope(gitlabApiHost)
         .get(
-          '/api/v4/projects/undefined/issues?per_page=100&author_id=undefined&state=opened'
+          '/api/v4/projects/undefined/issues?per_page=100&scope=created_by_me&state=opened'
         )
         .reply(200, [])
         .post('/api/v4/projects/undefined/issues')
@@ -765,7 +812,7 @@ describe(getName(), () => {
       httpMock
         .scope(gitlabApiHost)
         .get(
-          '/api/v4/projects/undefined/issues?per_page=100&author_id=undefined&state=opened'
+          '/api/v4/projects/undefined/issues?per_page=100&scope=created_by_me&state=opened'
         )
         .reply(200, [
           {
@@ -793,7 +840,7 @@ describe(getName(), () => {
       httpMock
         .scope(gitlabApiHost)
         .get(
-          '/api/v4/projects/undefined/issues?per_page=100&author_id=undefined&state=opened'
+          '/api/v4/projects/undefined/issues?per_page=100&scope=created_by_me&state=opened'
         )
         .reply(200, [
           {
@@ -822,7 +869,7 @@ describe(getName(), () => {
       httpMock
         .scope(gitlabApiHost)
         .get(
-          '/api/v4/projects/undefined/issues?per_page=100&author_id=undefined&state=opened'
+          '/api/v4/projects/undefined/issues?per_page=100&scope=created_by_me&state=opened'
         )
         .reply(200, [
           {
@@ -849,7 +896,7 @@ describe(getName(), () => {
       httpMock
         .scope(gitlabApiHost)
         .get(
-          '/api/v4/projects/undefined/issues?per_page=100&author_id=undefined&state=opened'
+          '/api/v4/projects/undefined/issues?per_page=100&scope=created_by_me&state=opened'
         )
         .reply(200, [
           {
@@ -1020,7 +1067,9 @@ describe(getName(), () => {
           .get('/api/v4/users?username=someuser')
           .reply(200, [{ id: 1 }])
           .get('/api/v4/users?username=someotheruser')
-          .reply(200, [{ id: 2 }]);
+          .reply(200, [{ id: 2 }])
+          .put('/api/v4/projects/undefined/merge_requests/42')
+          .reply(200);
 
         await gitlab.addReviewers(42, ['someuser', 'foo', 'someotheruser']);
         expect(scope.isDone()).toBeTrue();
@@ -1108,7 +1157,9 @@ describe(getName(), () => {
     it('returns true if no title and all state', async () => {
       httpMock
         .scope(gitlabApiHost)
-        .get('/api/v4/projects/undefined/merge_requests?per_page=100')
+        .get(
+          '/api/v4/projects/undefined/merge_requests?per_page=100&scope=created_by_me'
+        )
         .reply(200, [
           {
             iid: 1,
@@ -1126,7 +1177,9 @@ describe(getName(), () => {
     it('returns true if not open', async () => {
       httpMock
         .scope(gitlabApiHost)
-        .get('/api/v4/projects/undefined/merge_requests?per_page=100')
+        .get(
+          '/api/v4/projects/undefined/merge_requests?per_page=100&scope=created_by_me'
+        )
         .reply(200, [
           {
             iid: 1,
@@ -1146,7 +1199,9 @@ describe(getName(), () => {
     it('returns true if open and with title', async () => {
       httpMock
         .scope(gitlabApiHost)
-        .get('/api/v4/projects/undefined/merge_requests?per_page=100')
+        .get(
+          '/api/v4/projects/undefined/merge_requests?per_page=100&scope=created_by_me'
+        )
         .reply(200, [
           {
             iid: 1,
@@ -1167,7 +1222,9 @@ describe(getName(), () => {
     it('returns true with title', async () => {
       httpMock
         .scope(gitlabApiHost)
-        .get('/api/v4/projects/undefined/merge_requests?per_page=100')
+        .get(
+          '/api/v4/projects/undefined/merge_requests?per_page=100&scope=created_by_me'
+        )
         .reply(200, [
           {
             iid: 1,
@@ -1186,7 +1243,9 @@ describe(getName(), () => {
     it('returns true with draft prefix title', async () => {
       httpMock
         .scope(gitlabApiHost)
-        .get('/api/v4/projects/undefined/merge_requests?per_page=100')
+        .get(
+          '/api/v4/projects/undefined/merge_requests?per_page=100&scope=created_by_me'
+        )
         .reply(200, [
           {
             iid: 1,
@@ -1205,7 +1264,9 @@ describe(getName(), () => {
     it('returns true with deprecated draft prefix title', async () => {
       httpMock
         .scope(gitlabApiHost)
-        .get('/api/v4/projects/undefined/merge_requests?per_page=100')
+        .get(
+          '/api/v4/projects/undefined/merge_requests?per_page=100&scope=created_by_me'
+        )
         .reply(200, [
           {
             iid: 1,
@@ -1353,8 +1414,199 @@ describe(getName(), () => {
         prBody: 'the-body',
         labels: [],
         platformOptions: {
-          azureAutoComplete: false,
-          gitLabAutomerge: true,
+          usePlatformAutomerge: true,
+        },
+      });
+      expect(httpMock.getTrace()).toMatchSnapshot();
+    });
+
+    it('raises with squash enabled when repository squash option is default_on', async () => {
+      await initPlatform('14.0.0');
+
+      httpMock
+        .scope(gitlabApiHost)
+        .get('/api/v4/projects/some%2Frepo')
+        .reply(200, {
+          squash_option: 'default_on',
+          default_branch: 'master',
+          url: 'https://some-url',
+        });
+      await gitlab.initRepo({
+        repository: 'some/repo',
+      });
+      httpMock
+        .scope(gitlabApiHost)
+        .post('/api/v4/projects/some%2Frepo/merge_requests')
+        .reply(200, {
+          id: 1,
+          iid: 12345,
+          title: 'some title',
+        });
+      const pr = await gitlab.createPr({
+        sourceBranch: 'some-branch',
+        targetBranch: 'master',
+        prTitle: 'some-title',
+        prBody: 'the-body',
+        labels: null,
+      });
+      expect(pr).toMatchSnapshot();
+      expect(httpMock.getTrace()).toMatchSnapshot();
+    });
+
+    it('raises with squash enabled when repository squash option is always', async () => {
+      await initPlatform('14.0.0');
+
+      httpMock
+        .scope(gitlabApiHost)
+        .get('/api/v4/projects/some%2Frepo')
+        .reply(200, {
+          squash_option: 'always',
+          default_branch: 'master',
+          url: 'https://some-url',
+        });
+      await gitlab.initRepo({
+        repository: 'some/repo',
+      });
+      httpMock
+        .scope(gitlabApiHost)
+        .post('/api/v4/projects/some%2Frepo/merge_requests')
+        .reply(200, {
+          id: 1,
+          iid: 12345,
+          title: 'some title',
+        });
+      const pr = await gitlab.createPr({
+        sourceBranch: 'some-branch',
+        targetBranch: 'master',
+        prTitle: 'some-title',
+        prBody: 'the-body',
+        labels: null,
+      });
+      expect(pr).toMatchSnapshot();
+      expect(httpMock.getTrace()).toMatchSnapshot();
+    });
+
+    it('adds approval rule to ignore all approvals', async () => {
+      await initPlatform('13.3.6-ee');
+      httpMock
+        .scope(gitlabApiHost)
+        .post('/api/v4/projects/undefined/merge_requests')
+        .reply(200, {
+          id: 1,
+          iid: 12345,
+          title: 'some title',
+        })
+        .get('/api/v4/projects/undefined/merge_requests/12345')
+        .reply(200)
+        .get('/api/v4/projects/undefined/merge_requests/12345')
+        .reply(200, {
+          merge_status: 'can_be_merged',
+          pipeline: {
+            id: 29626725,
+            sha: '2be7ddb704c7b6b83732fdd5b9f09d5a397b5f8f',
+            ref: 'patch-28',
+            status: 'success',
+          },
+        })
+        .put('/api/v4/projects/undefined/merge_requests/12345/merge')
+        .reply(200)
+        .get('/api/v4/projects/undefined/merge_requests/12345/approval_rules')
+        .reply(200, [])
+        .post('/api/v4/projects/undefined/merge_requests/12345/approval_rules')
+        .reply(200);
+      await gitlab.createPr({
+        sourceBranch: 'some-branch',
+        targetBranch: 'master',
+        prTitle: 'some-title',
+        prBody: 'the-body',
+        labels: [],
+        platformOptions: {
+          usePlatformAutomerge: true,
+          gitLabIgnoreApprovals: true,
+        },
+      });
+      expect(httpMock.getTrace()).toMatchSnapshot();
+    });
+
+    it('does not try to create already existing approval rule', async () => {
+      await initPlatform('13.3.6-ee');
+      httpMock
+        .scope(gitlabApiHost)
+        .post('/api/v4/projects/undefined/merge_requests')
+        .reply(200, {
+          id: 1,
+          iid: 12345,
+          title: 'some title',
+        })
+        .get('/api/v4/projects/undefined/merge_requests/12345')
+        .reply(200)
+        .get('/api/v4/projects/undefined/merge_requests/12345')
+        .reply(200, {
+          merge_status: 'can_be_merged',
+          pipeline: {
+            id: 29626725,
+            sha: '2be7ddb704c7b6b83732fdd5b9f09d5a397b5f8f',
+            ref: 'patch-28',
+            status: 'success',
+          },
+        })
+        .put('/api/v4/projects/undefined/merge_requests/12345/merge')
+        .reply(200)
+        .get('/api/v4/projects/undefined/merge_requests/12345/approval_rules')
+        .reply(200, [
+          { name: 'renovateIgnoreApprovals', approvals_required: 0 },
+        ]);
+      await gitlab.createPr({
+        sourceBranch: 'some-branch',
+        targetBranch: 'master',
+        prTitle: 'some-title',
+        prBody: 'the-body',
+        labels: [],
+        platformOptions: {
+          usePlatformAutomerge: true,
+          gitLabIgnoreApprovals: true,
+        },
+      });
+      expect(httpMock.getTrace()).toMatchSnapshot();
+    });
+
+    it('silently ignores approval rules adding errors', async () => {
+      await initPlatform('13.3.6-ee');
+      httpMock
+        .scope(gitlabApiHost)
+        .post('/api/v4/projects/undefined/merge_requests')
+        .reply(200, {
+          id: 1,
+          iid: 12345,
+          title: 'some title',
+        })
+        .get('/api/v4/projects/undefined/merge_requests/12345')
+        .reply(200)
+        .get('/api/v4/projects/undefined/merge_requests/12345')
+        .reply(200, {
+          merge_status: 'can_be_merged',
+          pipeline: {
+            id: 29626725,
+            sha: '2be7ddb704c7b6b83732fdd5b9f09d5a397b5f8f',
+            ref: 'patch-28',
+            status: 'success',
+          },
+        })
+        .put('/api/v4/projects/undefined/merge_requests/12345/merge')
+        .reply(200)
+        .get('/api/v4/projects/undefined/merge_requests/12345/approval_rules')
+        .reply(200, [])
+        .post('/api/v4/projects/undefined/merge_requests/12345/approval_rules')
+        .replyWithError('Unknown');
+      await gitlab.createPr({
+        sourceBranch: 'some-branch',
+        targetBranch: 'master',
+        prTitle: 'some-title',
+        prBody: 'the-body',
+        labels: [],
+        platformOptions: {
+          usePlatformAutomerge: true,
+          gitLabIgnoreApprovals: true,
         },
       });
       expect(httpMock.getTrace()).toMatchSnapshot();
@@ -1381,7 +1633,7 @@ describe(getName(), () => {
         });
       const pr = await gitlab.getPr(12345);
       expect(pr).toMatchSnapshot();
-      expect(pr.hasAssignees).toBe(false);
+      expect(pr.hasAssignees).toBeFalse();
       expect(httpMock.getTrace()).toMatchSnapshot();
     });
     it('removes draft prefix from returned title', async () => {
@@ -1455,7 +1707,7 @@ describe(getName(), () => {
         .reply(200, [{ status: 'success' }]);
       const pr = await gitlab.getPr(12345);
       expect(pr).toMatchSnapshot();
-      expect(pr.hasAssignees).toBe(true);
+      expect(pr.hasAssignees).toBeTrue();
       expect(httpMock.getTrace()).toMatchSnapshot();
     });
     it('returns the PR with nonexisting branch', async () => {
@@ -1482,7 +1734,7 @@ describe(getName(), () => {
         });
       const pr = await gitlab.getPr(12345);
       expect(pr).toMatchSnapshot();
-      expect(pr.hasAssignees).toBe(true);
+      expect(pr.hasAssignees).toBeTrue();
       expect(httpMock.getTrace()).toMatchSnapshot();
     });
   });
@@ -1492,7 +1744,9 @@ describe(getName(), () => {
       await initPlatform('13.3.6-ee');
       httpMock
         .scope(gitlabApiHost)
-        .get('/api/v4/projects/undefined/merge_requests?per_page=100')
+        .get(
+          '/api/v4/projects/undefined/merge_requests?per_page=100&scope=created_by_me'
+        )
         .reply(200, [
           {
             iid: 1,
@@ -1510,7 +1764,9 @@ describe(getName(), () => {
       await initPlatform('13.3.6-ee');
       httpMock
         .scope(gitlabApiHost)
-        .get('/api/v4/projects/undefined/merge_requests?per_page=100')
+        .get(
+          '/api/v4/projects/undefined/merge_requests?per_page=100&scope=created_by_me'
+        )
         .reply(200, [
           {
             iid: 1,
@@ -1528,7 +1784,9 @@ describe(getName(), () => {
       await initPlatform('13.3.6-ee');
       httpMock
         .scope(gitlabApiHost)
-        .get('/api/v4/projects/undefined/merge_requests?per_page=100')
+        .get(
+          '/api/v4/projects/undefined/merge_requests?per_page=100&scope=created_by_me'
+        )
         .reply(200, [
           {
             iid: 1,
@@ -1546,7 +1804,9 @@ describe(getName(), () => {
       await initPlatform('13.3.6-ee');
       httpMock
         .scope(gitlabApiHost)
-        .get('/api/v4/projects/undefined/merge_requests?per_page=100')
+        .get(
+          '/api/v4/projects/undefined/merge_requests?per_page=100&scope=created_by_me'
+        )
         .reply(200, [
           {
             iid: 1,
@@ -1573,7 +1833,9 @@ describe(getName(), () => {
         .scope(gitlabApiHost)
         .put('/api/v4/projects/undefined/merge_requests/1/merge')
         .reply(200);
-      await gitlab.mergePr(1, undefined);
+      await gitlab.mergePr({
+        id: 1,
+      });
       expect(httpMock.getTrace()).toMatchSnapshot();
     });
   });
@@ -1653,6 +1915,25 @@ These updates have all been created already. Click a checkbox below to force a r
         });
       const res = await gitlab.getJsonFile('dir/file.json');
       expect(res).toEqual(data);
+      expect(httpMock.getTrace()).toMatchSnapshot();
+    });
+    it('returns file content in json5 format', async () => {
+      const json5Data = `
+        { 
+          // json5 comment
+          foo: 'bar' 
+        }
+        `;
+      const scope = await initRepo();
+      scope
+        .get(
+          '/api/v4/projects/some%2Frepo/repository/files/dir%2Ffile.json5?ref=HEAD'
+        )
+        .reply(200, {
+          content: Buffer.from(json5Data).toString('base64'),
+        });
+      const res = await gitlab.getJsonFile('dir/file.json5');
+      expect(res).toEqual({ foo: 'bar' });
       expect(httpMock.getTrace()).toMatchSnapshot();
     });
     it('throws on malformed JSON', async () => {

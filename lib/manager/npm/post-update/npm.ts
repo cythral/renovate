@@ -1,14 +1,21 @@
+import is from '@sindresorhus/is';
 import { validRange } from 'semver';
 import { quote } from 'shlex';
 import { join } from 'upath';
-import { getAdminConfig } from '../../../config/admin';
+import { getGlobalConfig } from '../../../config/global';
 import {
   SYSTEM_INSUFFICIENT_DISK_SPACE,
   TEMPORARY_ERROR,
 } from '../../../constants/error-messages';
 import { logger } from '../../../logger';
 import { ExecOptions, exec } from '../../../util/exec';
-import { move, pathExists, readFile, remove } from '../../../util/fs';
+import {
+  move,
+  outputFile,
+  pathExists,
+  readFile,
+  remove,
+} from '../../../util/fs';
 import type { PostUpdateConfig, Upgrade } from '../../types';
 import { getNodeConstraint } from './node-version';
 import type { GenerateLockFileResult } from './types';
@@ -52,7 +59,7 @@ export async function generateLockFile(
       cmdOptions += '--package-lock-only --no-audit';
     }
 
-    if (!getAdminConfig().allowScripts || config.ignoreScripts) {
+    if (!getGlobalConfig().allowScripts || config.ignoreScripts) {
       cmdOptions += ' --ignore-scripts';
     }
 
@@ -65,13 +72,13 @@ export async function generateLockFile(
       },
       docker: {
         image: 'node',
-        tagScheme: 'npm',
+        tagScheme: 'node',
         tagConstraint,
         preCommands,
       },
     };
     // istanbul ignore if
-    if (getAdminConfig().exposeAllEnv) {
+    if (getGlobalConfig().exposeAllEnv) {
       execOptions.extraEnv.NPM_AUTH = env.NPM_AUTH;
       execOptions.extraEnv.NPM_EMAIL = env.NPM_EMAIL;
     }
@@ -104,8 +111,9 @@ export async function generateLockFile(
       commands.push('npm dedupe');
     }
 
+    const lockFileName = join(cwd, filename);
+
     if (upgrades.find((upgrade) => upgrade.isLockFileMaintenance)) {
-      const lockFileName = join(cwd, filename);
       logger.debug(
         `Removing ${lockFileName} first due to lock file maintenance upgrade`
       );
@@ -116,6 +124,36 @@ export async function generateLockFile(
           { err, lockFileName },
           'Error removing yarn.lock for lock file maintenance'
         );
+      }
+    } else {
+      // massage lock file for npm 7+
+      try {
+        const lockFileParsed = JSON.parse(await readFile(lockFileName, 'utf8'));
+        const packageNames = Object.keys(lockFileParsed.packages);
+        if (is.nonEmptyArray(packageNames)) {
+          let lockFileMassaged = false;
+          for (const { depName } of upgrades) {
+            for (const packageName of packageNames) {
+              if (
+                packageName === `node_modules/${depName}` ||
+                packageName.startsWith(`node_modules/${depName}/`)
+              ) {
+                logger.trace({ packageName }, 'Massaging out package name');
+                lockFileMassaged = true;
+                delete lockFileParsed.packages[packageName];
+              }
+            }
+          }
+          if (lockFileMassaged) {
+            logger.debug('Writing massaged package-lock.json');
+            await outputFile(
+              lockFileName,
+              JSON.stringify(lockFileParsed, null, 2)
+            );
+          }
+        }
+      } catch (err) {
+        logger.warn({ err }, 'Error massaging package-lock.json');
       }
     }
 

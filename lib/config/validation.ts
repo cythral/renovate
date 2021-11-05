@@ -3,8 +3,8 @@ import { getLanguageList, getManagerList } from '../manager';
 import { configRegexPredicate, isConfigRegex, regEx } from '../util/regex';
 import * as template from '../util/template';
 import { hasValidSchedule, hasValidTimezone } from '../workers/branch/schedule';
-import { getOptions } from './definitions';
 import { migrateConfig } from './migration';
+import { getOptions } from './options';
 import { resolveConfigPresets } from './presets';
 import type {
   RenovateConfig,
@@ -40,7 +40,7 @@ const ignoredNodes = [
 
 function isManagerPath(parentPath: string): boolean {
   return (
-    /^regexManagers\[[0-9]+]$/.test(parentPath) ||
+    regEx(/^regexManagers\[[0-9]+]$/).test(parentPath) ||
     managerList.includes(parentPath)
   );
 }
@@ -78,8 +78,6 @@ function getDeprecationMessage(option: string): string {
     branchName: `Direct editing of branchName is now deprecated. Please edit branchPrefix, additionalBranchPrefix, or branchTopic instead`,
     commitMessage: `Direct editing of commitMessage is now deprecated. Please edit commitMessage's subcomponents instead.`,
     prTitle: `Direct editing of prTitle is now deprecated. Please edit commitMessage subcomponents instead as they will be passed through to prTitle.`,
-    yarnrc:
-      'Use of `yarnrc` in config is deprecated. Please commit it to your repository instead.',
   };
   return deprecatedOptions[option];
 }
@@ -87,8 +85,8 @@ function getDeprecationMessage(option: string): string {
 export function getParentName(parentPath: string): string {
   return parentPath
     ? parentPath
-        .replace(/\.?encrypted$/, '')
-        .replace(/\[\d+\]$/, '')
+        .replace(regEx(/\.?encrypted$/), '')
+        .replace(regEx(/\[\d+\]$/), '')
         .split('.')
         .pop()
     : '.';
@@ -255,7 +253,7 @@ export async function validateConfig(
               }
             }
             if (key === 'extends') {
-              const tzRe = /^:timezone\((.+)\)$/;
+              const tzRe = regEx(/^:timezone\((.+)\)$/); // TODO #12071
               for (const subval of val) {
                 if (is.string(subval)) {
                   if (
@@ -390,6 +388,8 @@ export async function validateConfig(
                 'registryUrlTemplate',
                 'currentValueTemplate',
                 'extractVersionTemplate',
+                'autoReplaceStringTemplate',
+                'depTypeTemplate',
               ];
               // TODO: fix types
               for (const regexManager of val as any[]) {
@@ -481,7 +481,7 @@ export async function validateConfig(
             }
             if (
               (selectors.includes(key) || key === 'matchCurrentVersion') &&
-              !/p.*Rules\[\d+\]$/.test(parentPath) && // Inside a packageRule
+              !regEx(/p.*Rules\[\d+\]$/).test(parentPath) && // Inside a packageRule  // TODO #12071
               (parentPath || !isPreset) // top level in a preset
             ) {
               errors.push({

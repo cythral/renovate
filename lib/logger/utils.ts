@@ -66,6 +66,7 @@ export default function prepareError(err: Error): Record<string, unknown> {
     const options: Record<string, unknown> = {
       headers: clone(err.options.headers),
       url: err.options.url?.toString(),
+      hostType: err.options.context.hostType,
     };
     response.options = options;
 
@@ -159,7 +160,7 @@ export function withSanitizer(streamConfig: bunyan.Stream): bunyan.Stream {
       const result =
         streamConfig.type === 'raw'
           ? raw
-          : JSON.stringify(raw, bunyan.safeCycles()).replace(/\n?$/, '\n');
+          : JSON.stringify(raw, bunyan.safeCycles()).replace(/\n?$/, '\n'); // TODO #12070
       stream.write(result, enc, cb);
     };
 

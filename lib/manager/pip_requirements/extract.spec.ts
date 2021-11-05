@@ -1,5 +1,5 @@
-import { getName, loadFixture } from '../../../test/util';
-import { setAdminConfig } from '../../config/admin';
+import { loadFixture } from '../../../test/util';
+import { setGlobalConfig } from '../../config/global';
 import { extractPackageFile } from './extract';
 
 const requirements1 = loadFixture('requirements1.txt');
@@ -9,15 +9,16 @@ const requirements4 = loadFixture('requirements4.txt');
 const requirements5 = loadFixture('requirements5.txt');
 const requirements6 = loadFixture('requirements6.txt');
 const requirements7 = loadFixture('requirements7.txt');
+const requirements8 = loadFixture('requirements8.txt');
 
-describe(getName(), () => {
+describe('manager/pip_requirements/extract', () => {
   beforeEach(() => {
     delete process.env.PIP_TEST_TOKEN;
-    setAdminConfig();
+    setGlobalConfig();
   });
   afterEach(() => {
     delete process.env.PIP_TEST_TOKEN;
-    setAdminConfig();
+    setGlobalConfig();
   });
   describe('extractPackageFile()', () => {
     let config;
@@ -39,7 +40,7 @@ describe(getName(), () => {
       const res = extractPackageFile(requirements1, 'unused_file_name', config);
       expect(res).toMatchSnapshot();
       expect(res.registryUrls).toEqual(['http://example.com/private-pypi/']);
-      expect(res.deps).toHaveLength(3);
+      expect(res.deps).toHaveLength(4);
     });
     it('extracts multiple dependencies', () => {
       const res = extractPackageFile(
@@ -123,7 +124,7 @@ describe(getName(), () => {
     });
     it('should replace env vars in high trust mode', () => {
       process.env.PIP_TEST_TOKEN = 'its-a-secret';
-      setAdminConfig({ exposeAllEnv: true });
+      setGlobalConfig({ exposeAllEnv: true });
       const res = extractPackageFile(requirements7, 'unused_file_name', {});
       expect(res.registryUrls).toEqual([
         'https://pypi.org/pypi/',
@@ -132,6 +133,11 @@ describe(getName(), () => {
         'http://its-a-secret:example.com/private-pypi/',
         'http://its-a-secret:example.com/private-pypi/',
       ]);
+    });
+    it('should handle hashes', () => {
+      const res = extractPackageFile(requirements8, 'unused_file_name', {});
+      expect(res).toMatchSnapshot();
+      expect(res.deps).toHaveLength(3);
     });
   });
 });

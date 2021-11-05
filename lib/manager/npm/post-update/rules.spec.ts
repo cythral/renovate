@@ -1,8 +1,7 @@
-import { getName } from '../../../../test/util';
 import * as hostRules from '../../../util/host-rules';
 import { processHostRules } from './rules';
 
-describe(getName(), () => {
+describe('manager/npm/post-update/rules', () => {
   describe('processHostRules()', () => {
     beforeEach(() => {
       hostRules.clear();
@@ -13,7 +12,7 @@ describe(getName(), () => {
       expect(res.additionalYarnRcYml).toBeUndefined();
     });
     it('returns empty if no resolvedHost', () => {
-      hostRules.add({ hostType: 'npm', token: 'abc123' });
+      hostRules.add({ hostType: 'npm', token: '123test' });
       const res = processHostRules();
       expect(res.additionalNpmrcContent).toHaveLength(0);
       expect(res.additionalYarnRcYml).toBeUndefined();
@@ -26,6 +25,7 @@ describe(getName(), () => {
         password: 'pass123',
       });
       const res = processHostRules();
+      // FIXME: explicit assert condition
       expect(res).toMatchSnapshot();
     });
     it('returns mixed rules content', () => {
@@ -47,6 +47,7 @@ describe(getName(), () => {
         password: 'pass123',
       });
       const res = processHostRules();
+      // FIXME: explicit assert condition
       expect(res).toMatchSnapshot();
     });
   });

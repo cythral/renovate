@@ -1,3 +1,6 @@
+import { quote } from 'shlex';
+import { getGlobalConfig } from '../../config/global';
+import { getPkgReleases } from '../../datasource';
 import { logger } from '../../logger';
 import { api, id as composerVersioningId } from '../../versioning/composer';
 import type { UpdateArtifactsConfig } from '../types';
@@ -5,13 +8,72 @@ import type { ComposerConfig, ComposerLock } from './types';
 
 export { composerVersioningId };
 
-export function getConstraint(config: UpdateArtifactsConfig): string {
-  const { constraints = {} } = config;
+export function getComposerArguments(config: UpdateArtifactsConfig): string {
+  let args = '';
+
+  if (config.composerIgnorePlatformReqs) {
+    if (config.composerIgnorePlatformReqs.length === 0) {
+      args += ' --ignore-platform-reqs';
+    } else {
+      config.composerIgnorePlatformReqs.forEach((req) => {
+        args += ' --ignore-platform-req ' + quote(req);
+      });
+    }
+  }
+
+  args += ' --no-ansi --no-interaction';
+  if (!getGlobalConfig().allowScripts || config.ignoreScripts) {
+    args += ' --no-scripts --no-autoloader --no-plugins';
+  }
+
+  return args;
+}
+
+export async function getComposerConstraint(
+  constraints: Record<string, string>
+): Promise<string> {
   const { composer } = constraints;
 
-  if (composer) {
-    logger.debug('Using composer constraint from config');
+  if (api.isSingleVersion(composer)) {
+    logger.debug(
+      { version: composer },
+      'Using composer constraint from config'
+    );
     return composer;
+  }
+
+  const release = await getPkgReleases({
+    depName: 'composer/composer',
+    datasource: 'github-releases',
+    versioning: composerVersioningId,
+  });
+
+  if (!release?.releases?.length) {
+    throw new Error('No composer releases found.');
+  }
+  let versions = release.releases.map((r) => r.version);
+
+  if (composer) {
+    versions = versions.filter(
+      (v) => api.isValid(v) && api.matches(v, composer)
+    );
+  }
+
+  if (!versions.length) {
+    throw new Error('No compatible composer releases found.');
+  }
+
+  const version = versions.pop();
+  logger.debug({ range: composer, version }, 'Using composer constraint');
+  return version;
+}
+
+export function getPhpConstraint(constraints: Record<string, string>): string {
+  const { php } = constraints;
+
+  if (php) {
+    logger.debug('Using php constraint from config');
+    return php;
   }
 
   return null;

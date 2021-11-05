@@ -1,5 +1,4 @@
 import * as httpMock from '../../../test/http-mock';
-import { getName } from '../../../test/util';
 import {
   EXTERNAL_HOST_ERROR,
   HOST_DISABLED,
@@ -10,7 +9,7 @@ import { Http } from '.';
 
 const baseUrl = 'http://renovate.com';
 
-describe(getName(), () => {
+describe('util/http/index', () => {
   let http: Http;
 
   beforeEach(() => {
@@ -20,15 +19,16 @@ describe(getName(), () => {
   });
   it('get', async () => {
     httpMock.scope(baseUrl).get('/test').reply(200);
+    // FIXME: explicit assert condition
     expect(await http.get('http://renovate.com/test')).toMatchSnapshot();
-    expect(httpMock.allUsed()).toBe(true);
+    expect(httpMock.allUsed()).toBeTrue();
   });
   it('returns 429 error', async () => {
     httpMock.scope(baseUrl).get('/test').reply(429);
     await expect(http.get('http://renovate.com/test')).rejects.toThrow(
       'Response code 429 (Too Many Requests)'
     );
-    expect(httpMock.allUsed()).toBe(true);
+    expect(httpMock.allUsed()).toBeTrue();
   });
   it('converts 404 error to ExternalHostError', async () => {
     httpMock.scope(baseUrl).get('/test').reply(404);
@@ -36,7 +36,7 @@ describe(getName(), () => {
     await expect(http.get('http://renovate.com/test')).rejects.toThrow(
       EXTERNAL_HOST_ERROR
     );
-    expect(httpMock.allUsed()).toBe(true);
+    expect(httpMock.allUsed()).toBeTrue();
   });
   it('disables hosts', async () => {
     hostRules.add({ matchHost: 'renovate.com', enabled: false });
@@ -50,46 +50,52 @@ describe(getName(), () => {
     await expect(http.get('http://renovate.com/test')).rejects.toThrow(
       'Response code 404 (Not Found)'
     );
-    expect(httpMock.allUsed()).toBe(true);
+    expect(httpMock.allUsed()).toBeTrue();
   });
   it('getJson', async () => {
     httpMock.scope(baseUrl).get('/').reply(200, '{ "test": true }');
+    // FIXME: explicit assert condition
     expect(await http.getJson('http://renovate.com')).toMatchSnapshot();
   });
   it('postJson', async () => {
     httpMock.scope(baseUrl).post('/').reply(200, {});
+    // FIXME: explicit assert condition
     expect(
       await http.postJson('http://renovate.com', { body: {}, baseUrl })
     ).toMatchSnapshot();
-    expect(httpMock.allUsed()).toBe(true);
+    expect(httpMock.allUsed()).toBeTrue();
   });
   it('putJson', async () => {
     httpMock.scope(baseUrl).put('/').reply(200, {});
+    // FIXME: explicit assert condition
     expect(
       await http.putJson('http://renovate.com', { body: {}, baseUrl })
     ).toMatchSnapshot();
-    expect(httpMock.allUsed()).toBe(true);
+    expect(httpMock.allUsed()).toBeTrue();
   });
   it('patchJson', async () => {
     httpMock.scope(baseUrl).patch('/').reply(200, {});
+    // FIXME: explicit assert condition
     expect(
       await http.patchJson('http://renovate.com', { body: {}, baseUrl })
     ).toMatchSnapshot();
-    expect(httpMock.allUsed()).toBe(true);
+    expect(httpMock.allUsed()).toBeTrue();
   });
   it('deleteJson', async () => {
     httpMock.scope(baseUrl).delete('/').reply(200, {});
+    // FIXME: explicit assert condition
     expect(
       await http.deleteJson('http://renovate.com', { body: {}, baseUrl })
     ).toMatchSnapshot();
-    expect(httpMock.allUsed()).toBe(true);
+    expect(httpMock.allUsed()).toBeTrue();
   });
   it('headJson', async () => {
     httpMock.scope(baseUrl).head('/').reply(200, {});
+    // FIXME: explicit assert condition
     expect(
       await http.headJson('http://renovate.com', { baseUrl })
     ).toMatchSnapshot();
-    expect(httpMock.allUsed()).toBe(true);
+    expect(httpMock.allUsed()).toBeTrue();
   });
 
   it('stream', async () => {
@@ -114,7 +120,7 @@ describe(getName(), () => {
     await done;
 
     expect(data).toBe('{}');
-    expect(httpMock.allUsed()).toBe(true);
+    expect(httpMock.allUsed()).toBeTrue();
   });
 
   it('retries', async () => {
@@ -127,8 +133,9 @@ describe(getName(), () => {
         .reply(500)
         .head('/')
         .reply(200, undefined, { 'x-some-header': 'abc' });
+      // FIXME: explicit assert condition
       expect(await http.head('http://renovate.com')).toMatchSnapshot();
-      expect(httpMock.allUsed()).toBe(true);
+      expect(httpMock.allUsed()).toBeTrue();
     } finally {
       process.env.NODE_ENV = NODE_ENV;
     }
@@ -200,5 +207,12 @@ describe(getName(), () => {
     expect(foo).toBeTrue();
     expect(bar).toBeTrue();
     expect(baz).toBeTrue();
+  });
+
+  it('getBuffer', async () => {
+    httpMock.scope(baseUrl).get('/').reply(200, Buffer.from('test'));
+    const res = await http.getBuffer('http://renovate.com');
+    expect(res.body).toBeInstanceOf(Buffer);
+    expect(res.body.toString('utf-8')).toEqual('test');
   });
 });

@@ -1,6 +1,8 @@
 import type { Preset } from '../types';
 import * as monorepos from './monorepo';
 
+const nonPinUpdateTypes = ['digest', 'patch', 'minor', 'major'];
+
 const staticGroups = {
   all: {
     description: 'Group all updates together',
@@ -48,6 +50,7 @@ const staticGroups = {
     extends: [
       'group:nodeJs',
       'group:allApollographql',
+      'group:codemirror',
       'group:fortawesome',
       'group:fusionjs',
       'group:glimmer',
@@ -59,6 +62,7 @@ const staticGroups = {
       'group:illuminate',
       'group:jekyllEcosystem',
       'group:jestPlusTSJest',
+      'group:jestPlusTypes',
       'group:polymer',
       'group:resilience4j',
       'group:rubyOmniauth',
@@ -99,6 +103,15 @@ const staticGroups = {
       },
     ],
   },
+  codemirror: {
+    description: 'Group CodeMirror packages together',
+    packageRules: [
+      {
+        groupName: 'CodeMirror',
+        matchPackagePrefixes: ['@codemirror/'],
+      },
+    ],
+  },
   definitelyTyped: {
     description: 'Group all @types packages together',
     packageRules: [
@@ -128,7 +141,7 @@ const staticGroups = {
     ],
   },
   fusionjs: {
-    description: 'Fusion.js packages',
+    description: 'Group Fusion.js packages together',
     matchPackageNames: [
       'fusion-cli',
       'fusion-core',
@@ -148,7 +161,7 @@ const staticGroups = {
     ],
   },
   illuminate: {
-    description: 'Group PHP illuminate packages together',
+    description: 'Group PHP Illuminate packages together',
     packageRules: [
       {
         matchPackagePrefixes: ['illuminate/'],
@@ -158,7 +171,7 @@ const staticGroups = {
     ],
   },
   symfony: {
-    description: 'Group PHP symfony packages together',
+    description: 'Group PHP Symfony packages together',
     packageRules: [
       {
         matchPackagePrefixes: ['symfony/'],
@@ -254,6 +267,7 @@ const staticGroups = {
       {
         groupName: 'spring boot',
         matchPackagePrefixes: ['org.springframework.boot:'],
+        matchPackageNames: ['org.springframework.boot'],
       },
     ],
   },
@@ -438,7 +452,7 @@ const staticGroups = {
     ],
   },
   postcss: {
-    description: 'Group postcss packages together',
+    description: 'Group PostCSS packages together',
     packageRules: [
       {
         extends: 'packages:postcss',
@@ -447,7 +461,7 @@ const staticGroups = {
     ],
   },
   jekyllEcosystem: {
-    description: 'Group jekyll and related ruby packages together',
+    description: 'Group Jekyll and related Ruby packages together',
     packageRules: [
       {
         matchSourceUrlPrefixes: [
@@ -459,7 +473,7 @@ const staticGroups = {
     ],
   },
   rubyOmniauth: {
-    description: 'Group omniauth packages together',
+    description: 'Group OmniAuth packages together',
     packageRules: [
       {
         matchDatasources: ['rubygems'],
@@ -574,11 +588,20 @@ const staticGroups = {
     ],
   },
   jestPlusTSJest: {
-    description: 'Add ts-jest major update to jest monorepo',
+    description: 'Add ts-jest major update to Jest monorepo',
     packageRules: [
       {
         matchSourceUrlPrefixes: ['https://github.com/kulshekhar/ts-jest'],
         matchUpdateTypes: ['major'],
+        groupName: 'jest monorepo',
+      },
+    ],
+  },
+  jestPlusTypes: {
+    description: 'Add @types/jest update to Jest monorepo',
+    packageRules: [
+      {
+        matchPackageNames: ['@types/jest'],
         groupName: 'jest monorepo',
       },
     ],
@@ -596,6 +619,7 @@ for (const monorepo of Object.keys(monorepos.presets)) {
       {
         description: `Group packages from ${monorepo} monorepo together`,
         extends: `monorepo:${monorepo}`,
+        matchUpdateTypes: nonPinUpdateTypes,
         groupName: `${monorepo} monorepo`,
       },
     ],

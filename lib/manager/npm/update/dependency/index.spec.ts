@@ -1,12 +1,13 @@
-import { getName, loadFixture } from '../../../../../test/util';
+import { loadFixture } from '../../../../../test/util';
 import * as npmUpdater from '.';
 
 const readFixture = (x: string): string => loadFixture(x, '../..');
 
 const input01Content = readFixture('inputs/01.json');
 const input01GlobContent = readFixture('inputs/01-glob.json');
+const input01PMContent = readFixture('inputs/01-package-manager.json');
 
-describe(getName(), () => {
+describe('manager/npm/update/dependency/index', () => {
   describe('.updateDependency(fileContent, depType, depName, newValue)', () => {
     it('replaces a dependency value', () => {
       const upgrade = {
@@ -38,6 +39,7 @@ describe(getName(), () => {
         fileContent: input,
         upgrade,
       });
+      // FIXME: explicit assert condition
       expect(res).toMatchSnapshot();
     });
     it('replaces a npm package alias', () => {
@@ -58,6 +60,7 @@ describe(getName(), () => {
         fileContent: input,
         upgrade,
       });
+      // FIXME: explicit assert condition
       expect(res).toMatchSnapshot();
     });
     it('replaces a github short hash', () => {
@@ -77,6 +80,7 @@ describe(getName(), () => {
         fileContent: input,
         upgrade,
       });
+      // FIXME: explicit assert condition
       expect(res).toMatchSnapshot();
     });
     it('replaces a github fully specified version', () => {
@@ -191,6 +195,20 @@ describe(getName(), () => {
         upgrade,
       });
       expect(testContent).toBeNull();
+    });
+
+    it('updates packageManager', () => {
+      const upgrade = {
+        depType: 'packageManager',
+        depName: 'yarn',
+        newValue: '3.1.0',
+      };
+      const outputContent = readFixture('outputs/014.json');
+      const testContent = npmUpdater.updateDependency({
+        fileContent: input01PMContent,
+        upgrade,
+      });
+      expect(testContent).toEqual(outputContent);
     });
   });
 });

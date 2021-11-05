@@ -1,28 +1,29 @@
 import _simpleGit from 'simple-git';
-import { dir } from 'tmp-promise';
+import { DirectoryResult, dir } from 'tmp-promise';
 import { join } from 'upath';
-import { getName } from '../../../test/util';
-import { setAdminConfig } from '../../config/admin';
-import type { RepoAdminConfig } from '../../config/types';
+import { setGlobalConfig } from '../../config/global';
+import type { RepoGlobalConfig } from '../../config/types';
 import type { Upgrade } from '../types';
 import updateDependency from './update';
 
 jest.mock('simple-git');
 const simpleGit: any = _simpleGit;
 
-describe(getName(), () => {
+describe('manager/git-submodules/update', () => {
   describe('updateDependency', () => {
     let upgrade: Upgrade;
-    let adminConfig: RepoAdminConfig;
+    let adminConfig: RepoGlobalConfig;
+    let tmpDir: DirectoryResult;
     beforeAll(async () => {
       upgrade = { depName: 'renovate' };
 
-      const tmpDir = await dir();
+      tmpDir = await dir({ unsafeCleanup: true });
       adminConfig = { localDir: join(tmpDir.path) };
-      setAdminConfig(adminConfig);
+      setGlobalConfig(adminConfig);
     });
-    afterAll(() => {
-      setAdminConfig();
+    afterAll(async () => {
+      await tmpDir.cleanup();
+      setGlobalConfig();
     });
     it('returns null on error', async () => {
       simpleGit.mockReturnValue({

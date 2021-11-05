@@ -1,6 +1,6 @@
-import { RenovateConfig, getConfig, getName } from '../../../../test/util';
+import { RenovateConfig, getConfig } from '../../../../test/util';
 
-import { LANGUAGE_DOCKER } from '../../../constants/languages';
+import { ProgrammingLanguage } from '../../../constants';
 import { flattenUpdates } from './flatten';
 
 let config: RenovateConfig;
@@ -11,7 +11,7 @@ beforeEach(() => {
   config.warnings = [];
 });
 
-describe(getName(), () => {
+describe('workers/repository/updates/flatten', () => {
   describe('flattenUpdates()', () => {
     it('flattens', async () => {
       config.lockFileMaintenance.enabled = true;
@@ -88,7 +88,7 @@ describe(getName(), () => {
             deps: [
               {
                 depName: 'amd64/node',
-                language: LANGUAGE_DOCKER,
+                language: ProgrammingLanguage.Docker,
                 sourceUrl: 'https://github.com/nodejs/node',
                 updates: [{ newValue: '10.0.1' }],
               },
@@ -99,7 +99,7 @@ describe(getName(), () => {
             deps: [
               {
                 depName: 'calico/node',
-                language: LANGUAGE_DOCKER,
+                language: ProgrammingLanguage.Docker,
                 sourceUrl: 'https://calico.com',
                 updates: [{ newValue: '3.2.0', updateType: 'minor' }],
               },
