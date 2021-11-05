@@ -149,7 +149,7 @@ export async function readLocalDirectory(path: string): Promise<string[]> {
 export async function readLocalDirectoryRecursive(
   path: string
 ): Promise<string[]> {
-  const { localDir } = getAdminConfig();
+  const { localDir } = getGlobalConfig();
   const localPath = join(localDir, path);
   const result = [];
   const inodes = await fs.readdir(localPath);
