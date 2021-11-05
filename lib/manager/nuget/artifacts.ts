@@ -120,12 +120,6 @@ async function runDotnetRestore(
 ): Promise<void> {
   const globalJsonContent = await readLocalFile('global.json', 'utf8');
   const tagConstraint = getDotnetConstraint(globalJsonContent, config);
-  const execOptions: ExecOptions = {
-    docker: {
-      image: 'dotnet',
-      tagConstraint,
-    },
-  };
 
   const nugetConfigDir = await ensureCacheDir(
     `./others/nuget/${getRandomString()}`
@@ -133,7 +127,8 @@ async function runDotnetRestore(
   const nugetConfigFile = join(nugetConfigDir, 'nuget.config');
   await outputFile(
     nugetConfigFile,
-    `<?xml version="1.0" encoding="utf-8"?>\n<configuration>\n</configuration>\n`
+    `<?xml version="1.0" encoding="utf-8"?>\n<configuration>\n</configuration>\n`,
+    { mode: 755 }
   );
   const solutionFile = await getSolutionFile();
   const cmds = [
@@ -142,6 +137,13 @@ async function runDotnetRestore(
       solutionFile ?? packageFileName
     } --force-evaluate --configfile ${nugetConfigFile}`,
   ];
+
+  const execOptions: ExecOptions = {
+    docker: {
+      image: 'dotnet',
+      tagConstraint,
+    },
+  };
   logger.debug({ cmd: cmds }, 'dotnet command');
   await exec(cmds, execOptions);
   await remove(nugetConfigDir);
