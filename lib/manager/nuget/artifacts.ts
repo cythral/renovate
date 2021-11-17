@@ -156,7 +156,7 @@ export async function updateArtifacts({
 }: UpdateArtifact): Promise<UpdateArtifactsResult[] | null> {
   logger.debug(`nuget.updateArtifacts(${packageFileName})`);
 
-  if (/(?:cs|vb|fs)proj$/i.test(packageFileName)) {
+  if (/(?:cs|vb|fs)?proj$/i.test(packageFileName)) {
     const lockFileName = getSiblingFileName(
       packageFileName,
       'packages.lock.json'
